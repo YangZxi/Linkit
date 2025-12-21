@@ -1,0 +1,13 @@
+version: "3"
+services:
+  linkit:
+    image: yangzxi/linkit
+    container_name: linkit
+    ports:
+      - "3301:3301"
+    volumes:
+      - $PWD/data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - ADMIN_PASSWORD=123123
+      # - STORAGE_DRIVER=s3

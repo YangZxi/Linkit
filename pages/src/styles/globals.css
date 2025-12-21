@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@plugin "../../hero.ts";
+@source "../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --navbar-height: 56px;
+  --footer-height: 72px;
+  --app-height: 100vh;
+  --main-height: calc(var(--app-height) - var(--navbar-height) - var(--footer-height));
+  --upload-height: 460px;
+}
+
+.upload-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.6) transparent;
+}
+
+.upload-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.upload-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.upload-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.4), rgba(34, 211, 238, 0.5));
+  border-radius: 9999px;
+}
+
+.upload-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.6), rgba(34, 211, 238, 0.7));
+}
