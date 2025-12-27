@@ -31,12 +31,6 @@ export default function AdminPasswordPage() {
       setNewPassword2("");
       addToast({ title: "密码修改成功", color: "success", variant: "flat" });
     } catch (err) {
-      addToast({
-        title: "密码修改失败",
-        description: (err as ApiResponse<unknown>).msg,
-        color: "danger",
-        variant: "flat",
-      });
     } finally {
       setSaving(false);
     }

@@ -14,7 +14,9 @@ export default function Login() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const data = await api.get<UserProfile>("/me");
+        const data = await api.get<UserProfile>("/me", {
+          hideToast: true,
+        });
         setUser(data);
       } catch {
         setUser(null);
@@ -49,12 +51,6 @@ export default function Login() {
       setUser(null);
       window.location.reload();
     } catch (err) {
-      addToast({
-        title: "退出失败",
-        description: getApiErrorMessage(err),
-        color: "danger",
-        variant: "flat",
-      });
     }
   };
 

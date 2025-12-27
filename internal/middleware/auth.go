@@ -34,7 +34,7 @@ func AuthRequired(store *db.DB, cfg config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := GetUserFromContext(c)
 		if user == nil {
-			c.JSON(http.StatusUnauthorized, server.Fail[any]("未登录", 401))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, server.Fail[any]("未登录", 401))
 			return
 		}
 		c.Next()
@@ -45,11 +45,11 @@ func AdminRequired(cfg config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := GetUserFromContext(c)
 		if user == nil {
-			c.JSON(http.StatusUnauthorized, server.Fail[any]("未登录", 401))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, server.Fail[any]("未登录", 401))
 			return
 		}
-		if user.Email != cfg.AdminEmail {
-			c.JSON(http.StatusForbidden, server.Fail[any]("无权限", 403))
+		if user.Username != cfg.AdminUsername {
+			c.AbortWithStatusJSON(http.StatusForbidden, server.Fail[any]("无权限", 403))
 			return
 		}
 		c.Next()

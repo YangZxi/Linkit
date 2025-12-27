@@ -41,12 +41,6 @@ export default function AdminDashboardPage() {
       setStats(res ?? emptyStats);
     } catch (err) {
       setStats(emptyStats);
-      addToast({
-        title: "加载失败",
-        description: (err as ApiResponse<unknown>).msg,
-        color: "danger",
-        variant: "flat",
-      });
     } finally {
       setLoading(false);
     }

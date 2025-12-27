@@ -71,12 +71,6 @@ export default function AdminConfigPage() {
       setValues(next);
       setSources(nextSources);
     } catch (err) {
-      addToast({
-        title: "加载失败",
-        description: (err as ApiResponse<unknown>).msg,
-        color: "danger",
-        variant: "flat",
-      });
       setValues(defaultValues);
       setSources({});
     } finally {
@@ -121,12 +115,6 @@ export default function AdminConfigPage() {
       addToast({ title: "保存成功", color: "success", variant: "flat" });
       await load();
     } catch (err) {
-      addToast({
-        title: "保存失败",
-        description: getApiErrorMessage(err),
-        color: "danger",
-        variant: "flat",
-      });
     } finally {
       setSaving(false);
     }

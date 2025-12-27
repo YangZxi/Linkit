@@ -301,8 +301,8 @@ export default function GalleryGrid() {
         setItems(res.data);
         setTotal(res.total);
       } catch (err) {
+        console.log(err)
         const message = (err as ApiResponse<unknown>).msg;
-
         setError(message);
         setItems([]);
         setTotal(0);
@@ -359,11 +359,6 @@ export default function GalleryGrid() {
         await fetchData(page);
         return true;
       } catch (err: any) {
-        addToast({
-          title: "删除失败",
-          color: "danger",
-          variant: "flat",
-        });
         return false;
       } finally {
         setDeletingId(null);
@@ -435,13 +430,6 @@ export default function GalleryGrid() {
         password: trimmedPassword,
       });
       await fetchData(page);
-    } catch (err) {
-      const message = getApiErrorMessage(err, "创建私密分享失败");
-      addToast({
-        title: message,
-        color: "danger",
-        variant: "flat",
-      });
     } finally {
       setShareSubmitting(false);
     }
