@@ -22,13 +22,6 @@ export default function SharePreview({
   rawUrl,
   filename,
 }: SharePreviewProps) {
-  const [origin, setOrigin] = useState<string>("");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-    }
-  }, []);
 
   const copy = useCallback(async (text: string, type: "url" | "raw") => {
     if (!text) return;
@@ -50,21 +43,15 @@ export default function SharePreview({
     }
   }, []);
 
-  const fullPreviewUrl = useMemo(() => {
-    if (origin) {
-      return new URL(`/s/${code}`, origin).toString();
-    }
-
-    return `/s/${code}`;
-  }, [code, origin]);
-
   const fullRawUrl = useMemo(() => {
-    if (origin) {
-      return new URL(`${rawUrl}`, origin).toString();
-    }
-
-    return rawUrl;
+    return new URL(`${rawUrl}`, origin).toString();
   }, [origin, rawUrl]);
+
+  const fullPreviewUrl = useMemo(() => {
+    console.log(fullRawUrl);
+    const pwd = new URL(fullRawUrl).searchParams.get("pwd");
+    return new URL(`/s/${code}${pwd ? `?pwd=${encodeURIComponent(pwd)}` : ""}`, origin).toString();
+  }, [code, origin, fullRawUrl]);
 
   return (
     <div
@@ -92,6 +79,9 @@ export default function SharePreview({
           label="分享链接"
           labelPlacement="outside"
           value={fullPreviewUrl}
+          onClick={(event) => {
+            (event.target as HTMLInputElement).select && (event.target as HTMLInputElement)?.select();
+          }}
         />
         <div className="flex flex-wrap gap-3">
           <Button

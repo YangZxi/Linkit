@@ -1,7 +1,7 @@
 {
   "name": "linkit-react",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host --port 3300",
@@ -17,19 +17,20 @@
     "framer-motion": "11.18.2",
     "path-browserify": "1.0.1",
     "react": "19.2.1",
+    "react-day-picker": "^9.13.0",
     "react-dom": "19.2.1",
     "react-router-dom": "7.0.2",
     "tailwind-variants": "3.1.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "4.1.11",
     "@types/node": "22.13.1",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "@vitejs/plugin-react-swc": "3.7.0",
     "postcss": "8.5.6",
+    "tailwindcss": "4.1.11",
     "typescript": "5.6.3",
-    "vite": "5.4.11",
-    "@tailwindcss/postcss": "4.1.11",
-    "tailwindcss": "4.1.11"
+    "vite": "5.4.11"
   }
 }

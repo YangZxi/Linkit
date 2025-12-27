@@ -2,7 +2,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 type HttpMethod = "GET" | "POST";
 
-type ApiResponse<T> = {
+export type ApiResponse<T> = {
   msg: string;
   data: T;
   code: number;
@@ -19,10 +19,10 @@ async function request<T>(method: HttpMethod, url: string, body?: unknown): Prom
 
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
   if (!json || typeof json.code !== "number") {
-    throw new Error("响应格式错误");
+    return Promise.reject(json as ApiResponse<T>);
   }
   if (json.code !== 200) {
-    throw new Error(json.msg || "请求失败");
+    return Promise.reject(json as ApiResponse<T>);
   }
   return json.data;
 }

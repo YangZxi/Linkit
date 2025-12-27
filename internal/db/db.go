@@ -49,12 +49,14 @@ CREATE TABLE IF NOT EXISTS "resource" (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
-	createShareCodeTable = `
-CREATE TABLE IF NOT EXISTS "share_code" (
+	createShareTable = `
+CREATE TABLE IF NOT EXISTS "share" (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   resource_id INTEGER NOT NULL,
   code TEXT NOT NULL UNIQUE,
   user_id INTEGER NOT NULL,
+  password TEXT,
+  expire_time DATETIME,
   view_count INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -112,16 +114,16 @@ func (s *DB) Close() error {
 }
 
 func (s *DB) prepareSchema(ctx context.Context) error {
-	stmts := []string{createUserTable, createAppConfigTable, createResourceTable, createShareCodeTable}
+	stmts := []string{createUserTable, createAppConfigTable, createResourceTable}
 	for _, stmt := range stmts {
 		if _, err := s.Client.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}
-	if err := s.ensureColumn(ctx, "resource", "file_size", "file_size INTEGER NOT NULL DEFAULT 0"); err != nil {
+	if err := s.ensureColumn(ctx, "share", "password", "password TEXT"); err != nil {
 		return err
 	}
-	if err := s.ensureColumn(ctx, "share_code", "view_count", "view_count INTEGER NOT NULL DEFAULT 0"); err != nil {
+	if err := s.ensureColumn(ctx, "share", "expire_time", "expire_time DATETIME"); err != nil {
 		return err
 	}
 	return nil

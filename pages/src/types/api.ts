@@ -44,3 +44,7 @@ export type GalleryResponse = {
 export type GalleryDeleteResponse = {
   success: boolean;
 };
+
+export type CreateShareResponse = {
+  code: string;
+};

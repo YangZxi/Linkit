@@ -356,7 +356,7 @@ func persistResource(c *gin.Context, store *db.DB, res model.Resource) (int64, s
 	if err != nil {
 		return 0, "", err
 	}
-	share, err := store.Resource.CreateShareCode(ctx, resID, res.UserID)
+	share, err := store.Resource.CreateShareCode(ctx, resID, res.UserID, nil, nil)
 	if err != nil {
 		return 0, "", err
 	}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Card, CardBody, CardHeader, Spinner, addToast } from "@heroui/react";
 
-import api from "@/lib/api";
+import api, { ApiResponse } from "@/lib/api";
 
 type AdminDashboardStats = {
   totalFiles: number;
@@ -43,7 +43,7 @@ export default function AdminDashboardPage() {
       setStats(emptyStats);
       addToast({
         title: "加载失败",
-        description: (err as Error).message,
+        description: (err as ApiResponse<unknown>).msg,
         color: "danger",
         variant: "flat",
       });

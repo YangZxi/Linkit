@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Card, CardBody, CardHeader, Input, Select, SelectItem, Spinner, addToast } from "@heroui/react";
 
-import api from "@/lib/api";
+import api, { ApiResponse } from "@/lib/api";
 
 type AdminConfigItem = {
   key: string;
@@ -73,7 +73,7 @@ export default function AdminConfigPage() {
     } catch (err) {
       addToast({
         title: "加载失败",
-        description: (err as Error).message,
+        description: (err as ApiResponse<unknown>).msg,
         color: "danger",
         variant: "flat",
       });
@@ -123,7 +123,7 @@ export default function AdminConfigPage() {
     } catch (err) {
       addToast({
         title: "保存失败",
-        description: (err as Error).message,
+        description: getApiErrorMessage(err),
         color: "danger",
         variant: "flat",
       });

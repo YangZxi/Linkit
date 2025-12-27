@@ -51,7 +51,7 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(middleware.AuthOptional(store, cfg))
 
-	r.GET("/r/:slug", server.DownloadHandler(store, storageReg))
+	r.GET("/r/:code", server.DownloadHandler(store, storageReg))
 
 	api := r.Group("/api")
 	{
@@ -68,6 +68,7 @@ func main() {
 		apiAuth.POST("/gallery/delete", server.GalleryDeleteHandler(store, storageReg))
 		apiAuth.GET("/upload", server.UploadQueryHandler(cfg))
 		apiAuth.POST("/upload", server.UploadHandler(store, cfg, storageReg))
+		apiAuth.POST("/share", server.CreateShareHandler(store))
 
 		apiAdmin := apiAuth.Group("/admin")
 		apiAdmin.Use(middleware.AdminRequired(cfg))

@@ -1,9 +1,8 @@
-"use client";
-
 import type {
   GalleryDeleteResponse,
   GalleryItem,
   GalleryResponse,
+  CreateShareResponse,
 } from "@/types/api";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,17 +16,23 @@ import {
   Spinner,
   Image,
   addToast,
+  Input,
+  Alert,
+  Snippet,
 } from "@heroui/react";
 import clsx from "clsx";
 import { Icon } from "@iconify/react";
 
 import PreviewCore from "./PreviewCore";
 
-import api from "@/lib/api";
+import api, { ApiResponse } from "@/lib/api";
 import { inferMediaType, MediaType, TypeLabel } from "@/lib/file";
 import { copyText } from "@/lib/utils";
+import XModal from "./modal";
 
 const PAGE_SIZE = 10;
+const SHARE_PASSWORD_MIN = 4;
+const SHARE_PASSWORD_MAX = 32;
 
 function formatDateText(value: string) {
   const date = new Date(value);
@@ -56,12 +61,14 @@ function GalleryCard({
   origin,
   onCopyLink,
   onDelete,
+  onShare,
   deleting,
 }: {
   item: GalleryItem;
   origin: string;
   onCopyLink: (url: string) => void;
   onDelete: (item: GalleryItem) => void;
+  onShare: () => void;
   deleting: boolean;
 }) {
   const type = inferMediaType(item.type || "");
@@ -194,7 +201,7 @@ function GalleryCard({
       </div>
       <div className="flex items-center justify-between px-3 pb-3">
         <div className="text-[11px] text-default-500">
-          
+
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -208,6 +215,17 @@ function GalleryCard({
             onPress={() => onDelete(item)}
           >
             <Icon className="text-lg" icon="ic:outline-delete" />
+          </Button>
+          <Button
+            isIconOnly
+            aria-label="加密分享"
+            color="secondary"
+            size="sm"
+            variant="flat"
+            onClick={(event) => event.stopPropagation()}
+            onPress={() => onShare()}
+          >
+            <Icon className="text-lg" icon="mdi:send-lock-outline" />
           </Button>
           <Button
             color="primary"
@@ -233,14 +251,29 @@ export default function GalleryGrid() {
   const [error, setError] = useState<string | null>(null);
   const [origin, setOrigin] = useState("");
   const [preview, setPreview] = useState<GalleryItem | null>(null);
+  const [share, setShare] = useState<GalleryItem | null>(null);
+  const [sharePassword, setSharePassword] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [shareSubmitting, setShareSubmitting] = useState(false);
+  const [shareResult, setShareResult] = useState<{
+    url: string;
+    code: string;
+    password: string;
+  } | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOrigin(window.location.origin);
     }
   }, []);
+
+  useEffect(() => {
+    if (share) {
+      setSharePassword("");
+      setShareResult(null);
+    }
+  }, [share]);
 
   const totalPages = useMemo(() => {
     if (total <= 0) return 1;
@@ -268,7 +301,7 @@ export default function GalleryGrid() {
         setItems(res.data);
         setTotal(res.total);
       } catch (err) {
-        const message = (err as Error).message || "加载失败";
+        const message = (err as ApiResponse<unknown>).msg;
 
         setError(message);
         setItems([]);
@@ -325,12 +358,9 @@ export default function GalleryGrid() {
         }
         await fetchData(page);
         return true;
-      } catch (err) {
-        const message = (err as Error).message || "删除失败";
-
+      } catch (err: any) {
         addToast({
           title: "删除失败",
-          description: message,
           color: "danger",
           variant: "flat",
         });
@@ -359,6 +389,63 @@ export default function GalleryGrid() {
   const gotoNext = useCallback(() => {
     setPage((prev) => prev + 1);
   }, []);
+
+  const submitShare = useCallback(async () => {
+    if (!share || shareSubmitting) return;
+    if (shareResult) {
+      const copyContent = `分享链接：${shareResult.url}\n密码：${shareResult.password}`;
+      const ok = await copyText(copyContent);
+      addToast({
+        title: ok ? "已复制完整分享信息" : "复制失败",
+        color: ok ? "success" : "danger",
+        variant: "flat",
+      });
+      return;
+    }
+    const trimmedPassword = sharePassword.trim();
+    const length = trimmedPassword.length;
+    if (length < SHARE_PASSWORD_MIN || length > SHARE_PASSWORD_MAX) {
+      addToast({
+        title: "分享密码长度不合法",
+        description: `请设置 ${SHARE_PASSWORD_MIN}-${SHARE_PASSWORD_MAX} 位密码`,
+        color: "warning",
+        variant: "flat",
+      });
+      return;
+    }
+    setShareSubmitting(true);
+    try {
+      const res = await api.post<CreateShareResponse>("/share", {
+        resourceId: share.id,
+        password: trimmedPassword,
+      });
+      const shareUrl = origin
+        ? `${origin}/s/${res.code}`
+        : `/s/${res.code}`;
+      addToast({
+        title: "私密分享创建成功",
+        description: "可复制分享信息发送给对方",
+        color: "success",
+        variant: "flat",
+      });
+      setSharePassword(trimmedPassword);
+      setShareResult({
+        url: shareUrl,
+        code: res.code,
+        password: trimmedPassword,
+      });
+      await fetchData(page);
+    } catch (err) {
+      const message = getApiErrorMessage(err, "创建私密分享失败");
+      addToast({
+        title: message,
+        color: "danger",
+        variant: "flat",
+      });
+    } finally {
+      setShareSubmitting(false);
+    }
+  }, [fetchData, origin, page, share, shareResult, sharePassword, shareSubmitting]);
 
   const isDeleting = Boolean(deleteTarget && deletingId === deleteTarget.id);
 
@@ -441,6 +528,7 @@ export default function GalleryGrid() {
               origin={origin}
               onCopyLink={handleCopy}
               onDelete={(target) => setDeleteTarget(target)}
+              onShare={() => setShare(item)}
             />
           </div>
         ))}
@@ -545,83 +633,116 @@ export default function GalleryGrid() {
         </ModalContent>
       </Modal>
 
-      <Modal
+
+      {/* preview modal */}
+      <XModal
         isDismissable={false}
         isOpen={Boolean(preview)}
         placement="center"
         size="4xl"
         onOpenChange={(open) => !open && setPreview(null)}
+        header={<>
+          <span className="text-lg font-semibold text-default-900 dark:text-default-50">
+            预览
+          </span>
+          <span className="text-sm text-default-500">
+            {preview?.filename}
+          </span>
+        </>}
+        footer={(preview && preview.shareCode) && <>
+          <Button
+            color="secondary"
+            variant="bordered"
+            onPress={() =>
+              handleCopy(
+                origin
+                  ? `${origin}/r/${preview.shareCode}`
+                  : `/r/${preview.shareCode}`,
+              )
+            }
+          >
+            获取原始链接
+          </Button>
+          <Button
+            as="a"
+            color="primary"
+            download
+            href={`/r/${preview.shareCode}`}
+            variant="flat"
+          >
+            下载
+          </Button>
+          <Button color="default" variant="flat" onPress={() => setPreview(null)}>
+            关闭
+          </Button>
+        </>}
       >
-        <ModalContent>
-          {(close) =>
-            preview && preview.shareCode ? (
-              <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <span className="text-lg font-semibold text-default-900 dark:text-default-50">
-                    预览
-                  </span>
-                  <span className="text-sm text-default-500">
-                    {preview.filename}
-                  </span>
-                </ModalHeader>
-                <ModalBody>
-                  <PreviewCore
-                    className="min-h-[260px] max-h-[470px] w-full"
-                    filename={preview.filename}
-                    rawUrl={`/r/${preview.shareCode}`}
-                    type={inferMediaType(preview.type)}
-                  />
-                </ModalBody>
-                <ModalFooter>
-                  <Button
-                    color="secondary"
-                    variant="bordered"
-                    onPress={() =>
-                      handleCopy(
-                        origin
-                          ? `${origin}/r/${preview.shareCode}`
-                          : `/r/${preview.shareCode}`,
-                      )
-                    }
-                  >
-                    获取原始链接
-                  </Button>
-                  <Button
-                    as="a"
-                    color="primary"
-                    download
-                    href={`/r/${preview.shareCode}`}
-                    variant="flat"
-                  >
-                    下载
-                  </Button>
-                  <Button color="default" variant="flat" onPress={close}>
-                    关闭
-                  </Button>
-                </ModalFooter>
-              </>
-            ) : (
-              <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <span className="text-lg font-semibold text-default-900 dark:text-default-50">
-                    暂无法预览
-                  </span>
-                </ModalHeader>
-                <ModalBody>
-                  <p className="text-default-500">
-                    该资源缺少短链信息，请重新生成后再试。
-                  </p>
-                </ModalBody>
-                <ModalFooter>
-                  <Button color="primary" onPress={close}>
-                    知道了
-                  </Button>
-                </ModalFooter>
-              </>
-            )
-          }
-        </ModalContent>
-      </Modal>
-    </div>
+        {preview && preview.shareCode ? (
+          <PreviewCore
+            className="min-h-[260px] max-h-[470px] w-full"
+            filename={preview.filename}
+            rawUrl={`/r/${preview.shareCode}`}
+            type={inferMediaType(preview.type)}
+          />
+        ) : (<p className="text-default-500">
+          该资源缺少短链信息，请重新生成后再试。
+        </p>)}
+      </XModal>
+
+      {/* share preview modal */}
+      <XModal
+        isDismissable={false}
+        isOpen={Boolean(share)}
+        header={<>
+          <span className="text-lg font-semibold">
+            创建私密分享
+          </span>
+          <span className="text-sm text-default-500">
+            {share?.filename}
+          </span>
+        </>}
+        submitText={shareResult ? "复制" : "创建分享"}
+        onSubmit={submitShare}
+        onOpenChange={(open) => !open && setShare(null)}
+      >
+        <Input
+          autoFocus
+          isDisabled={shareSubmitting || Boolean(shareResult)}
+          label="分享密码"
+          maxLength={SHARE_PASSWORD_MAX}
+          minLength={SHARE_PASSWORD_MIN}
+          type="text"
+          value={sharePassword}
+          onValueChange={setSharePassword}
+        />
+        {shareResult && (
+          <Alert
+            color="success"
+            description={null
+            }
+            variant="flat"
+          >
+            <div className="space-y-1 text-sm text-default-600">
+              <p className="font-bold">创建私密分享成功</p>
+              <p className="break-all">
+                链接：
+                <span className="text-primary underline cursor-pointer"
+                  onClick={async (event) => {
+                    const ok = await copyText(shareResult.url);
+                    addToast({
+                      title: ok ? "已复制分享链接" : "复制失败",
+                      color: ok ? "success" : "danger",
+                      variant: "flat",
+                    });
+                  }}
+                >{shareResult.url}</span>
+              </p>
+              <p>密码：{shareResult.password}</p>
+            </div>
+          </Alert>
+        )}
+        {/* <XCalendar /> */}
+      </XModal>
+    </div >
   );
 }

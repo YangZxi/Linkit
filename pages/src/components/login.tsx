@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure, addToast } from "@heroui/react";
 
-import api from "@/lib/api";
+import api, { ApiResponse } from "@/lib/api";
 import { UserProfile } from "@/types/user";
 
 export default function Login() {
@@ -36,7 +36,7 @@ export default function Login() {
     } catch (err) {
       addToast({
         title: "登录失败",
-        description: (err as Error).message,
+        description: (err as ApiResponse<unknown>).msg,
         color: "danger",
         variant: "flat",
       });
@@ -51,7 +51,7 @@ export default function Login() {
     } catch (err) {
       addToast({
         title: "退出失败",
-        description: (err as Error).message,
+        description: getApiErrorMessage(err),
         color: "danger",
         variant: "flat",
       });

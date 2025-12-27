@@ -44,12 +44,15 @@ type UserResourceWithShare struct {
 }
 
 type ShareResource struct {
-	ShareID    int64     `json:"share_id"`
-	Code       string    `json:"code"`
-	ResourceID int64     `json:"resource_id"`
-	Filename   string    `json:"filename"`
-	Path       string    `json:"path"`
-	Type       string    `json:"type"`
-	ViewCount  int64     `json:"viewCount"`
-	CreatedAt  time.Time `json:"created_at"`
+	ShareID    int64      `json:"share_id"`
+	Code       string     `json:"code"`
+	ResourceID int64      `json:"resource_id"`
+	UserID     int64      `json:"-"`
+	Filename   string     `json:"filename"`
+	Path       string     `json:"path"`
+	Type       string     `json:"type"`
+	ViewCount  int64      `json:"viewCount"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Password   *string    `json:"-"`
+	ExpireTime *time.Time `json:"-"`
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Card, CardBody, CardHeader, Input, addToast } from "@heroui/react";
 
-import api from "@/lib/api";
+import api, { ApiResponse } from "@/lib/api";
 
 export default function AdminPasswordPage() {
   const [oldPassword, setOldPassword] = useState("");
@@ -33,7 +33,7 @@ export default function AdminPasswordPage() {
     } catch (err) {
       addToast({
         title: "密码修改失败",
-        description: (err as Error).message,
+        description: (err as ApiResponse<unknown>).msg,
         color: "danger",
         variant: "flat",
       });
@@ -81,4 +81,3 @@ export default function AdminPasswordPage() {
     </div>
   );
 }
-

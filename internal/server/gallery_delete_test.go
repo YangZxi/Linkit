@@ -71,7 +71,7 @@ func TestGalleryDeleteHandler_删除资源并清理存储(t *testing.T) {
 	if err != nil {
 		t.Fatalf("插入资源失败: %v", err)
 	}
-	if _, err := store.Client.ExecContext(ctx, `INSERT INTO share_code(resource_id, code, user_id, created_at) VALUES(?,?,?, CURRENT_TIMESTAMP)`, resourceID, "DEL123", admin.ID); err != nil {
+	if _, err := store.Client.ExecContext(ctx, `INSERT INTO share(resource_id, code, user_id, created_at) VALUES(?,?,?, CURRENT_TIMESTAMP)`, resourceID, "DEL123", admin.ID); err != nil {
 		t.Fatalf("插入短链失败: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestGalleryDeleteHandler_删除资源并清理存储(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("期望资源已删除，实际 count=%d", count)
 	}
-	if err := store.Client.QueryRowContext(ctx, `SELECT COUNT(1) FROM share_code WHERE resource_id = ?`, resourceID).Scan(&count); err != nil {
+	if err := store.Client.QueryRowContext(ctx, `SELECT COUNT(1) FROM share WHERE resource_id = ?`, resourceID).Scan(&count); err != nil {
 		t.Fatalf("查询短链失败: %v", err)
 	}
 	if count != 0 {
