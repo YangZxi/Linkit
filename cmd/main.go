@@ -22,9 +22,17 @@ import (
 func main() {
 	cfg := config.Load()
 	logger := server.NewLogger(cfg.LogLevel)
+	shouldRunServer, err := handleCLI(cfg, logger, os.Args[1:])
+	if err != nil {
+		logger.Error("CLI 执行失败", "err", err)
+		os.Exit(1)
+	}
+	if !shouldRunServer {
+		return
+	}
 	logger.Info("当前项目配置：", "config", cfg)
 	gin.SetMode(gin.ReleaseMode)
-	store, err := db.NewStore(cfg, logger)
+	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
 		logger.Error("初始化数据库失败", "err", err)
 		os.Exit(1)

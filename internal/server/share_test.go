@@ -32,7 +32,7 @@ func TestDownloadHandler_本地文件启用协商缓存_命中ETag返回304(t *t
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
-	store, err := db.NewStore(cfg, logger)
+	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
 		t.Fatalf("NewStore 失败: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestDownloadHandler_本地文件_命中IfModifiedSince返回304(t *testing.
 		t.Fatalf("cfg.Sync 失败: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
-	store, err := db.NewStore(cfg, logger)
+	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
 		t.Fatalf("NewStore 失败: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestShareInfoHandler_分享密码校验(t *testing.T) {
 		t.Fatalf("cfg.Sync 失败: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
-	store, err := db.NewStore(cfg, logger)
+	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
 		t.Fatalf("NewStore 失败: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestDownloadHandler_分享过期返回410(t *testing.T) {
 		t.Fatalf("cfg.Sync 失败: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
-	store, err := db.NewStore(cfg, logger)
+	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
 		t.Fatalf("NewStore 失败: %v", err)
 	}

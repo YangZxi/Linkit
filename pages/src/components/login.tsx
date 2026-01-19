@@ -81,7 +81,14 @@ export default function Login() {
                 <Button color="danger" variant="light" onPress={onClose}>
                   取消
                 </Button>
-                <Button color="primary" onPress={loginHandler}>
+                <Button color="primary" 
+                  onPress={loginHandler} 
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      loginHandler();
+                    }
+                  }}
+                >
                   登录
                 </Button>
               </ModalFooter>

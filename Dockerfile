@@ -7,6 +7,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY ./dist/ ./
+RUN ln -s /app/linkit /usr/local/bin/linkit
 
 EXPOSE 3301
 ENV PORT=3301 \

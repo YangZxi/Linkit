@@ -24,7 +24,7 @@ func TestAdminUpsertConfigHandler_白名单校验与写入(t *testing.T) {
 		t.Fatalf("cfg.Sync 失败: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
-	store, err := db.NewStore(cfg, logger)
+	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
 		t.Fatalf("NewStore 失败: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestAdminChangePasswordHandler_校验原密码并更新(t *testing.T) {
 		t.Fatalf("cfg.Sync 失败: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
-	store, err := db.NewStore(cfg, logger)
+	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
 		t.Fatalf("NewStore 失败: %v", err)
 	}

@@ -76,12 +76,12 @@ type DB struct {
 	Client    *sql.DB
 	Logger    *slog.Logger
 	Cfg       config.Config
-	Resource  *ResourceDao
-	User      *UserDao
 	AppConfig *AppConfigDao
+	User      *UserDao
+	Resource  *ResourceDao
 }
 
-func NewStore(cfg config.Config, logger *slog.Logger) (*DB, error) {
+func NewStore(cfg config.Config, logger *slog.Logger, init bool) (*DB, error) {
 	if err := ensureDir(cfg.DatabasePath); err != nil {
 		return nil, err
 	}
@@ -93,14 +93,16 @@ func NewStore(cfg config.Config, logger *slog.Logger) (*DB, error) {
 	store.Resource = &ResourceDao{store: store}
 	store.User = &UserDao{store: store}
 	store.AppConfig = &AppConfigDao{store: store}
-	if err := store.prepareSchema(context.Background()); err != nil {
-		return nil, err
-	}
-	if err := store.ensureAdmin(context.Background()); err != nil {
-		return nil, err
-	}
-	if err := store.ensureGuest(context.Background()); err != nil {
-		return nil, err
+	if init {
+		if err := store.upgradeSchema(context.Background()); err != nil {
+			return nil, err
+		}
+		if err := store.ensureAdmin(context.Background()); err != nil {
+			return nil, err
+		}
+		if err := store.ensureGuest(context.Background()); err != nil {
+			return nil, err
+		}
 	}
 	return store, nil
 }
@@ -125,7 +127,7 @@ func (s *DB) Close() error {
 	return s.Client.Close()
 }
 
-func (s *DB) prepareSchema(ctx context.Context) error {
+func (s *DB) upgradeSchema(ctx context.Context) error {
 	stmts := []string{createUserTable, createAppConfigTable, createResourceTable, createShareTable}
 	for _, stmt := range stmts {
 		if _, err := s.Client.ExecContext(ctx, stmt); err != nil {

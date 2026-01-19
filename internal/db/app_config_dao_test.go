@@ -14,7 +14,7 @@ func TestAppConfigDAO_SetConfig_UpsertAndSync(t *testing.T) {
 	cfg := config.Load()
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
-	store, err := NewStore(cfg, logger)
+	store, err := NewStore(cfg, logger, true)
 	if err != nil {
 		t.Fatalf("NewStore 失败: %v", err)
 	}
