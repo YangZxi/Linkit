@@ -49,3 +49,25 @@ func TestSetAppConfigValue_WhitelistOnly(t *testing.T) {
 		t.Fatalf("期望 STORAGE_DRIVER=s3，实际=%q", cfg.AppConfig.StorageDriver)
 	}
 }
+
+func TestSetAppConfigValue_GuestUploadConfig(t *testing.T) {
+	var cfg Config
+	if ok := cfg.SetAppConfigValue("GUEST_UPLOAD_EXT_WHITELIST", "jpg,png"); !ok {
+		t.Fatalf("后缀白名单应该生效")
+	}
+	if cfg.AppConfig.GuestUploadExtWhitelist != "jpg,png" {
+		t.Fatalf("期望 GUEST_UPLOAD_EXT_WHITELIST=jpg,png，实际=%q", cfg.AppConfig.GuestUploadExtWhitelist)
+	}
+	if ok := cfg.SetAppConfigValue("GUEST_UPLOAD_MAX_MB_SIZE", "8"); !ok {
+		t.Fatalf("大小白名单应该生效")
+	}
+	if cfg.AppConfig.GuestUploadMaxMbSize != 8 {
+		t.Fatalf("期望 GUEST_UPLOAD_MAX_MB_SIZE=8，实际=%d", cfg.AppConfig.GuestUploadMaxMbSize)
+	}
+	if ok := cfg.SetAppConfigValue("GUEST_UPLOAD_ENABLE", "true"); !ok {
+		t.Fatalf("启用开关应该生效")
+	}
+	if !cfg.AppConfig.GuestUploadEnable {
+		t.Fatalf("期望 GUEST_UPLOAD_ENABLE=true")
+	}
+}

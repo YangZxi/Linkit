@@ -19,6 +19,10 @@ type AppConfig struct {
 	S3SecretKey string `config:"S3_SECRET_KEY"`
 	S3Endpoint  string `config:"S3_ENDPOINT"`
 	S3Region    string `config:"S3_REGION"`
+	// 访客上传白名单配置
+	GuestUploadEnable       bool   `config:"GUEST_UPLOAD_ENABLE"`
+	GuestUploadExtWhitelist string `config:"GUEST_UPLOAD_EXT_WHITELIST"`
+	GuestUploadMaxMbSize    int    `config:"GUEST_UPLOAD_MAX_MB_SIZE"`
 }
 
 type Config struct {
@@ -193,12 +197,15 @@ func (cfg *Config) GetAppConfigValue(key string) (string, bool) {
 // 优先级：数据库 > env > 硬编码。
 func (cfg *Config) Sync(ctx context.Context, dao AppConfigDao) error {
 	cfg.AppConfig = AppConfig{
-		StorageDriver: getEnv("STORAGE_DRIVER", "local"),
-		S3Bucket:      os.Getenv("S3_BUCKET"),
-		S3AccessKey:   os.Getenv("S3_ACCESS_KEY"),
-		S3SecretKey:   os.Getenv("S3_SECRET_KEY"),
-		S3Endpoint:    os.Getenv("S3_ENDPOINT"),
-		S3Region:      getEnv("S3_REGION", "auto"),
+		StorageDriver:           getEnv("STORAGE_DRIVER", "local"),
+		S3Bucket:                os.Getenv("S3_BUCKET"),
+		S3AccessKey:             os.Getenv("S3_ACCESS_KEY"),
+		S3SecretKey:             os.Getenv("S3_SECRET_KEY"),
+		S3Endpoint:              os.Getenv("S3_ENDPOINT"),
+		S3Region:                getEnv("S3_REGION", "auto"),
+		GuestUploadEnable:       getBool("GUEST_UPLOAD_ENABLE", false),
+		GuestUploadExtWhitelist: getEnv("GUEST_UPLOAD_EXT_WHITELIST", "jpg,jpeg,png,gif"),
+		GuestUploadMaxMbSize:    getInt("GUEST_UPLOAD_MAX_MB_SIZE", 5),
 	}
 	if dao == nil {
 		return nil
@@ -224,6 +231,15 @@ func getInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return def
+}
+
+func getBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return def

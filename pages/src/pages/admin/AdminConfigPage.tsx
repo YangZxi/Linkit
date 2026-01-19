@@ -21,6 +21,9 @@ type ConfigValues = {
   S3_SECRET_KEY?: string;
   S3_ENDPOINT?: string;
   S3_REGION?: string;
+  GUEST_UPLOAD_ENABLE?: string;
+  GUEST_UPLOAD_EXT_WHITELIST?: string;
+  GUEST_UPLOAD_MAX_MB_SIZE?: string;
 };
 
 type ConfigSource = {
@@ -46,6 +49,9 @@ const defaultValues: ConfigValues = {
   S3_SECRET_KEY: undefined,
   S3_ENDPOINT: undefined,
   S3_REGION: undefined,
+  GUEST_UPLOAD_ENABLE: undefined,
+  GUEST_UPLOAD_EXT_WHITELIST: undefined,
+  GUEST_UPLOAD_MAX_MB_SIZE: undefined,
 };
 
 export default function AdminConfigPage() {
@@ -85,6 +91,17 @@ export default function AdminConfigPage() {
   const storageDriver = values.STORAGE_DRIVER?.trim() ?? "";
   const showS3Fields = storageDriver === "s3";
   const storageDriverInvalid = submitAttempted && !storageDriver;
+  const guestUploadEnable = values.GUEST_UPLOAD_ENABLE?.trim().toLowerCase() ?? "";
+  const guestUploadEnableInvalid =
+    submitAttempted && guestUploadEnable !== "true" && guestUploadEnable !== "false";
+  const guestUploadMaxMbSize = values.GUEST_UPLOAD_MAX_MB_SIZE?.trim() ?? "";
+  const guestUploadMaxMbSizeNumber = Number(guestUploadMaxMbSize);
+  const guestUploadMaxMbSizeInvalid =
+    submitAttempted &&
+    (!guestUploadMaxMbSize ||
+      Number.isNaN(guestUploadMaxMbSizeNumber) ||
+      !Number.isInteger(guestUploadMaxMbSizeNumber) ||
+      guestUploadMaxMbSizeNumber <= 0);
   const sourceHint = (key: keyof ConfigValues) => {
     const meta = sources[key];
     if (!meta) return "当前来源：未知";
@@ -96,6 +113,14 @@ export default function AdminConfigPage() {
     setSubmitAttempted(true);
     if (!storageDriver) {
       addToast({ title: "StorageDriver 不能为空", color: "danger", variant: "flat" });
+      return;
+    }
+    if (guestUploadEnableInvalid) {
+      addToast({ title: "访客上传开关需选择开启或关闭", color: "danger", variant: "flat" });
+      return;
+    }
+    if (guestUploadMaxMbSizeInvalid) {
+      addToast({ title: "访客上传大小需为正整数(MB)", color: "danger", variant: "flat" });
       return;
     }
     const newConfigs = { ...values };
@@ -198,6 +223,38 @@ export default function AdminConfigPage() {
                   />
                 </>
               )}
+              <div className="pt-2">
+                <p className="text-sm font-medium text-default-700">访客(未登录)上传白名单</p>
+                <p className="mt-1 text-xs text-default-500">可以设置文件后缀白名单与单文件大小(MB)</p>
+              </div>
+              <Select
+                errorMessage={guestUploadEnableInvalid ? "请选择是否开启访客上传" : undefined}
+                isInvalid={guestUploadEnableInvalid}
+                label={`访客上传开关 / ${sourceHint("GUEST_UPLOAD_ENABLE")}`}
+                placeholder="请选择是否开启"
+                selectedKeys={guestUploadEnable ? new Set([guestUploadEnable]) : new Set([])}
+                onSelectionChange={(keys) => {
+                  setValues((prev) => ({ ...prev, GUEST_UPLOAD_ENABLE: keys.currentKey ?? "false" }));
+                }}
+              >
+                <SelectItem key="false">关闭</SelectItem>
+                <SelectItem key="true">开启</SelectItem>
+              </Select>
+              <Input
+                label={`文件后缀白名单，英文逗号分隔 / ${sourceHint("GUEST_UPLOAD_EXT_WHITELIST")}`}
+                placeholder={"jpg,jpeg,png,gif"}
+                value={values.GUEST_UPLOAD_EXT_WHITELIST ?? ""}
+                onValueChange={(value) => setValues((prev) => ({ ...prev, GUEST_UPLOAD_EXT_WHITELIST: value }))}
+              />
+              <Input
+                errorMessage={guestUploadMaxMbSizeInvalid ? "请输入正整数，默认 5" : undefined}
+                isInvalid={guestUploadMaxMbSizeInvalid}
+                label={`访客上传大小上限(MB) / ${sourceHint("GUEST_UPLOAD_MAX_MB_SIZE")}`}
+                placeholder={"5"}
+                type="number"
+                value={values.GUEST_UPLOAD_MAX_MB_SIZE ?? ""}
+                onValueChange={(value) => setValues((prev) => ({ ...prev, GUEST_UPLOAD_MAX_MB_SIZE: value }))}
+              />
             </div>            
           )}
         </CardBody>

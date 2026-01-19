@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -74,8 +75,7 @@ func UploadHandler(store *db.DB, cfg config.Config, reg *storage.Registry) gin.H
 	return func(c *gin.Context) {
 		user := middlewareGetUser(c)
 		if user == nil {
-			c.JSON(http.StatusUnauthorized, Fail[any]("请先登录", 401))
-			return
+			user = &model.User{ID: db.GuestUserID, Username: db.GuestUsername}
 		}
 		if err := ensureDir(cfg.ChunkDir); err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("准备目录失败", 500))
@@ -110,6 +110,19 @@ func UploadHandler(store *db.DB, cfg config.Config, reg *storage.Registry) gin.H
 		totalChunksPtr := parseOptionalInt64(firstValue(form.Value["totalChunks"], ""))
 		chunkSizePtr := parseOptionalInt64(firstValue(form.Value["chunkSize"], ""))
 
+		// 访客上传按白名单限制
+		if user.ID == db.GuestUserID {
+			guestPolicy := newGuestUploadPolicy(cfg)
+			if guestPolicy == nil {
+				c.JSON(http.StatusForbidden, Fail[any]("不允许访客上传", 403))
+				return
+			}
+			if ok, msg := guestPolicy.allow(fileName, fileSize); !ok {
+				c.JSON(http.StatusBadRequest, Fail[any](msg, 400))
+				return
+			}
+		}
+
 		requireChunk := fileSize > cfg.ChunkThreshold
 		if fileSize > cfg.MaxFileSize {
 			c.JSON(http.StatusBadRequest, Fail[any]("文件大小超过限制", 400))
@@ -128,6 +141,7 @@ func UploadHandler(store *db.DB, cfg config.Config, reg *storage.Registry) gin.H
 				c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
 				return
 			}
+			fileSize := int64(len(data))
 			objectKey := storage.BuildObjectKey(hash, fileName, time.Now())
 			storedPath, err := stg.Write(objectKey, bytes.NewReader(data), int64(len(data)), fileType)
 			if err != nil {
@@ -188,6 +202,12 @@ func UploadHandler(store *db.DB, cfg config.Config, reg *storage.Registry) gin.H
 					return
 				}
 				reg.Logger.Info("分片合并完成", "upload_id", uploadID, "file", fileName, "total", *totalChunksPtr)
+				stat, err := os.Stat(mergedPath)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, Fail[any]("读取文件失败", 500))
+					return
+				}
+				fileSize = stat.Size()
 				hash, err := hashFile(mergedPath)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, Fail[any]("计算摘要失败", 500))
@@ -347,6 +367,76 @@ func parseOptionalInt64(value string) *int64 {
 		return &n
 	}
 	return nil
+}
+
+type guestUploadPolicy struct {
+	maxBytes int64
+	extSet   map[string]struct{}
+}
+
+func newGuestUploadPolicy(cfg config.Config) *guestUploadPolicy {
+	if !cfg.AppConfig.GuestUploadEnable {
+		return nil
+	}
+	maxMb := cfg.AppConfig.GuestUploadMaxMbSize
+	extSet := parseExtWhitelist(cfg.AppConfig.GuestUploadExtWhitelist)
+	if maxMb <= 0 || len(extSet) == 0 {
+		return nil
+	}
+	maxBytes := int64(maxMb) * 1024 * 1024
+	return &guestUploadPolicy{maxBytes: maxBytes, extSet: extSet}
+}
+
+func parseExtWhitelist(raw string) map[string]struct{} {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	items := strings.FieldsFunc(raw, func(r rune) bool {
+		switch r {
+		case ',', ';', '|', ' ', '\n', '\t', '\r':
+			return true
+		default:
+			return false
+		}
+	})
+	extSet := make(map[string]struct{})
+	for _, item := range items {
+		ext := normalizeExt(item)
+		if ext == "" {
+			continue
+		}
+		extSet[ext] = struct{}{}
+	}
+	if len(extSet) == 0 {
+		return nil
+	}
+	return extSet
+}
+
+func normalizeExt(ext string) string {
+	ext = strings.TrimSpace(strings.ToLower(ext))
+	ext = strings.TrimPrefix(ext, ".")
+	return ext
+}
+
+func (p *guestUploadPolicy) allow(fileName string, fileSize int64) (bool, string) {
+	if p == nil {
+		return false, "不允许访客上传"
+	}
+	ext := normalizeExt(filepath.Ext(fileName))
+	if ext == "" {
+		return false, "请登录后再进行上传"
+	}
+	if _, ok := p.extSet["*"]; !ok {
+		if _, ok := p.extSet[ext]; !ok {
+			return false, "请登录后再进行上传"
+		}
+	}
+	if fileSize > p.maxBytes {
+		return false, "文件大小超过限制"
+	}
+	return true, ""
 }
 
 func persistResource(c *gin.Context, store *db.DB, res model.Resource) (int64, string, error) {

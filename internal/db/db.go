@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"math"
@@ -15,6 +17,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"linkit/internal/config"
+)
+
+const (
+	GuestUserID   int64 = 2
+	GuestUsername       = "guest"
+	guestEmail          = "guest@example.com"
+	guestNickname       = "访客"
 )
 
 const (
@@ -90,6 +99,9 @@ func NewStore(cfg config.Config, logger *slog.Logger) (*DB, error) {
 	if err := store.ensureAdmin(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := store.ensureGuest(context.Background()); err != nil {
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -114,7 +126,7 @@ func (s *DB) Close() error {
 }
 
 func (s *DB) prepareSchema(ctx context.Context) error {
-	stmts := []string{createUserTable, createAppConfigTable, createResourceTable}
+	stmts := []string{createUserTable, createAppConfigTable, createResourceTable, createShareTable}
 	for _, stmt := range stmts {
 		if _, err := s.Client.ExecContext(ctx, stmt); err != nil {
 			return err
@@ -184,6 +196,48 @@ func (s *DB) ensureAdmin(ctx context.Context) error {
 	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(username, password, email, nickname) VALUES(?,?,?,?)`, s.Cfg.AdminUsername, string(pwHash), s.Cfg.AdminEmail, s.Cfg.AdminUsername)
 	if err == nil {
 		s.Logger.Info("创建默认管理员账户", "email", s.Cfg.AdminEmail)
+	}
+	return err
+}
+
+func (s *DB) ensureGuest(ctx context.Context) error {
+	var username string
+	err := s.Client.QueryRowContext(ctx, "SELECT username FROM user WHERE id = ?", GuestUserID).Scan(&username)
+	// guest user exists
+	if err == nil {
+		if username != GuestUsername {
+			s.Logger.Warn("访客ID已被占用，访客上传将复用该用户", "guest_id", GuestUserID, "username", username)
+			return nil
+		}
+		s.Logger.Info("访客账户已存在", "id", GuestUserID, "username", GuestUsername)
+		return nil
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+
+	var count int
+	if err := s.Client.QueryRowContext(ctx, "SELECT COUNT(1) FROM user WHERE username = ? OR email = ?", GuestUsername, guestEmail).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		s.Logger.Warn("访客账户已存在但ID不匹配", "guest_id", GuestUserID)
+		return nil
+	}
+
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		s.Logger.Error("生成访客密码失败", "error", err)
+		return err
+	}
+	secret := hex.EncodeToString(buf)
+	pwHash, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(id, username, password, email, nickname) VALUES(?,?,?,?,?)`, GuestUserID, GuestUsername, string(pwHash), guestEmail, guestNickname)
+	if err == nil {
+		s.Logger.Info("创建访客账户", "id", GuestUserID, "username", GuestUsername)
 	}
 	return err
 }
