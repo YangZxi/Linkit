@@ -411,7 +411,13 @@ export default function UploadPanel({ }: UploadPanelProps = {}) {
             }));
             resolve();
           } else {
-            reject(new Error(xhr.response?.msg || "上传失败"));
+            const msg = xhr.response?.msg || "上传失败";
+            addToast({
+              title: msg,
+              color: "danger",
+              variant: "flat"
+            });
+            reject(new Error(msg));
           }
         };
 
@@ -487,6 +493,12 @@ export default function UploadPanel({ }: UploadPanelProps = {}) {
           | UploadCompletedResponse;
 
         if (!res.ok) {
+          const msg = json?.msg || "分片上传失败";
+          addToast({
+            title: msg,
+            color: "danger",
+            variant: "flat"
+          });
           throw new Error(json?.msg || "分片上传失败");
         }
 
