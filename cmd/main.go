@@ -65,8 +65,8 @@ func main() {
 	{
 		api.POST("/login", server.LoginHandler(store, cfg))
 		api.GET("/share/:code", server.ShareInfoHandler(store))
-		api.GET("/upload", server.UploadQueryHandler(cfg))
-		api.POST("/upload", server.UploadHandler(store, cfg, storageReg))
+		api.GET("/upload", server.UploadQueryHandler(&cfg))
+		api.POST("/upload", server.UploadHandler(store, &cfg, storageReg))
 
 		apiAuth := api.Group("")
 		apiAuth.Use(middleware.AuthRequired(store, cfg))

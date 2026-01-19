@@ -40,7 +40,7 @@ type uploadResponse struct {
 	ResourceID  int64  `json:"resourceId,omitempty"`
 }
 
-func UploadQueryHandler(cfg config.Config) gin.HandlerFunc {
+func UploadQueryHandler(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uploadID := c.Query("uploadId")
 		if uploadID == "" {
@@ -71,7 +71,7 @@ func UploadQueryHandler(cfg config.Config) gin.HandlerFunc {
 	}
 }
 
-func UploadHandler(store *db.DB, cfg config.Config, reg *storage.Registry) gin.HandlerFunc {
+func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := middlewareGetUser(c)
 		if user == nil {
@@ -245,7 +245,7 @@ func ensureDir(dir string) error {
 	return os.MkdirAll(dir, 0o755)
 }
 
-func cleanupChunks(cfg config.Config) {
+func cleanupChunks(cfg *config.Config) {
 	total, err := dirSize(cfg.ChunkDir)
 	if err != nil || total <= cfg.CleanLimit {
 		return
@@ -374,7 +374,7 @@ type guestUploadPolicy struct {
 	extSet   map[string]struct{}
 }
 
-func newGuestUploadPolicy(cfg config.Config) *guestUploadPolicy {
+func newGuestUploadPolicy(cfg *config.Config) *guestUploadPolicy {
 	if !cfg.AppConfig.GuestUploadEnable {
 		return nil
 	}
