@@ -23,7 +23,7 @@ import {
 import clsx from "clsx";
 import { Icon } from "@iconify/react";
 
-import PreviewCore from "./PreviewCore";
+import PreviewCore from "./preview-core";
 
 import api, { ApiResponse } from "@/lib/api";
 import { inferMediaType, MediaType, TypeLabel } from "@/lib/file";

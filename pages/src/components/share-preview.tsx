@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { addToast, Button, Input } from "@heroui/react";
 import clsx from "clsx";
 
-import PreviewCore from "./PreviewCore";
+import PreviewCore from "./preview-core";
 
 import { MediaType } from "@/lib/file";
 import { copyText } from "@/lib/utils";

@@ -17,13 +17,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"linkit/internal/config"
+	"linkit/internal/db/model"
 )
 
 const (
 	GuestUserID   int64 = 2
 	GuestUsername       = "guest"
 	guestEmail          = "guest@example.com"
-	guestNickname       = "访客"
 )
 
 const (
@@ -182,22 +182,22 @@ func (s *DB) columnExists(ctx context.Context, table, column string) (bool, erro
 }
 
 func (s *DB) ensureAdmin(ctx context.Context) error {
-	var count int
-	err := s.Client.QueryRowContext(ctx, "SELECT COUNT(1) FROM user WHERE email = ?", s.Cfg.AdminEmail).Scan(&count)
-	if err != nil {
-		return err
+	row := s.Client.QueryRowContext(ctx, `SELECT id, username, password, email, nickname, token, created_at, updated_at FROM user WHERE id = ?`, s.Cfg.AdminUserId)
+	var user model.User
+	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Nickname, &user.Token, &user.CreatedAt, &user.UpdatedAt); err != nil {
+		s.Logger.Warn("获取管理员账号信息失败", "error", err)
 	}
-	if count > 0 {
-		s.Logger.Info("管理员账户已存在", "email", s.Cfg.AdminEmail)
+	if user.ID == s.Cfg.AdminUserId {
+		s.Logger.Info("管理员账户已存在", "id", user.ID, "username", user.Username, "email", s.Cfg.AdminEmail)
 		return nil
 	}
 	pwHash, err := bcrypt.GenerateFromPassword([]byte(s.Cfg.AdminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(username, password, email, nickname) VALUES(?,?,?,?)`, s.Cfg.AdminUsername, string(pwHash), s.Cfg.AdminEmail, s.Cfg.AdminUsername)
+	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(id, username, password, email, nickname) VALUES(?,?,?,?,?)`, s.Cfg.AdminUserId, s.Cfg.AdminUsername, string(pwHash), s.Cfg.AdminEmail, s.Cfg.AdminUsername)
 	if err == nil {
-		s.Logger.Info("创建默认管理员账户", "email", s.Cfg.AdminEmail)
+		s.Logger.Info("创建默认管理员账户", "username", s.Cfg.AdminUsername, "password", s.Cfg.AdminPassword, "email", s.Cfg.AdminEmail)
 	}
 	return err
 }
@@ -211,7 +211,7 @@ func (s *DB) ensureGuest(ctx context.Context) error {
 			s.Logger.Warn("访客ID已被占用，访客上传将复用该用户", "guest_id", GuestUserID, "username", username)
 			return nil
 		}
-		s.Logger.Info("访客账户已存在", "id", GuestUserID, "username", GuestUsername)
+		s.Logger.Info("访__客账户已存在", "id", GuestUserID, "username", GuestUsername)
 		return nil
 	}
 	if err != sql.ErrNoRows {
@@ -237,7 +237,7 @@ func (s *DB) ensureGuest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(id, username, password, email, nickname) VALUES(?,?,?,?,?)`, GuestUserID, GuestUsername, string(pwHash), guestEmail, guestNickname)
+	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(id, username, password, email, nickname) VALUES(?,?,?,?,?)`, GuestUserID, GuestUsername, string(pwHash), guestEmail, GuestUsername)
 	if err == nil {
 		s.Logger.Info("创建访客账户", "id", GuestUserID, "username", GuestUsername)
 	}

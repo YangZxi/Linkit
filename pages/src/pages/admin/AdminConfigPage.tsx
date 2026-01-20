@@ -105,8 +105,7 @@ export default function AdminConfigPage() {
   const sourceHint = (key: keyof ConfigValues) => {
     const meta = sources[key];
     if (!meta) return "当前来源：未知";
-    const suffix = meta.dbValue ? `（db=${meta.dbValue}）` : "";
-    return `当前来源：${labelOfSource(meta.source)}${suffix}`;
+    return `当前来源：${labelOfSource(meta.source)}`;
   };
 
   const save = async () => {

@@ -3,7 +3,7 @@ export const siteConfig = {
   description: "Upload once, use anywhere.",
   navItems: [
     { label: "Gallery", href: "/gallery", mobile: true },
-    { label: "ClipSync", href: "/clipsync" },
+    // { label: "ClipSync", href: "/clipsync" },
     { label: "About", href: "/about" },
   ],
 };

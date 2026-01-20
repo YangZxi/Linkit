@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -30,7 +31,9 @@ func main() {
 	if !shouldRunServer {
 		return
 	}
-	logger.Info("当前项目配置：", "config", cfg)
+	b, _ := json.MarshalIndent(cfg, "", "  ")
+	fmt.Println("当前项目配置：\n" + string(b))
+
 	gin.SetMode(gin.ReleaseMode)
 	store, err := db.NewStore(cfg, logger, true)
 	if err != nil {
@@ -44,7 +47,9 @@ func main() {
 		logger.Error("同步配置失败", "err", err)
 		os.Exit(1)
 	}
-	logger.Info("当前项目APP配置：", "config", cfg.AppConfig)
+	b, _ = json.MarshalIndent(cfg.AppConfig, "", "  ")
+	fmt.Println("当前项目 APP 配置：\n" + string(b))
+
 	storageReg, err := storage.SetupRegistry(cfg, logger)
 	if err != nil {
 		logger.Error("初始化存储失败", "err", err)

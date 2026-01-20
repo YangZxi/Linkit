@@ -48,7 +48,7 @@ func AdminRequired(cfg config.Config) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, server.Fail[any]("未登录", 401))
 			return
 		}
-		if user.Username != cfg.AdminUsername {
+		if user.Username != cfg.AdminUsername && user.ID != 1 {
 			c.AbortWithStatusJSON(http.StatusForbidden, server.Fail[any]("无权限", 403))
 			return
 		}

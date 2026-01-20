@@ -39,6 +39,7 @@ type Config struct {
 	ChunkThreshold int64
 	CleanLimit     int64
 	CleanExpire    time.Duration
+	AdminUserId    int64
 	AdminUsername  string
 	AdminPassword  string
 	AdminEmail     string
@@ -99,6 +100,7 @@ func Load() Config {
 		CleanLimit:     2 * 1024 * 1024 * 1024, // 2GB
 		CleanExpire:    30 * time.Minute,
 
+		AdminUserId:   1,
 		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
 		AdminPassword: getEnv("ADMIN_PASSWORD", "123123"),
 		AdminEmail:    getEnv("ADMIN_EMAIL", "admin@example.com"),
