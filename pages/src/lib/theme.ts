@@ -1,6 +1,4 @@
-// originally written by @imoaazahmed
-
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
 const ThemeProps = {
   key: "theme",
@@ -8,50 +6,83 @@ const ThemeProps = {
   dark: "dark",
 } as const;
 
-type Theme = typeof ThemeProps.light | typeof ThemeProps.dark;
+export type Theme = typeof ThemeProps.light | typeof ThemeProps.dark;
 
-export const useTheme = (defaultTheme?: Theme) => {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const storedTheme = localStorage.getItem(ThemeProps.key) as Theme | null;
+const canUseDOM = typeof window !== "undefined" && typeof document !== "undefined";
 
-    return storedTheme || (defaultTheme ?? ThemeProps.light);
-  });
+let currentTheme: Theme = ThemeProps.light;
+const listeners = new Set<() => void>();
 
-  const isDark = useMemo(() => {
-    return theme === ThemeProps.dark;
-  }, [theme]);
+function readThemeFromStorage(): Theme {
+  if (!canUseDOM) return ThemeProps.light;
+  const stored = window.localStorage.getItem(ThemeProps.key) as Theme | null;
+  return stored || ThemeProps.light;
+}
 
-  const isLight = useMemo(() => {
-    return theme === ThemeProps.light;
-  }, [theme]);
+function applyThemeToDom(theme: Theme) {
+  if (!canUseDOM) return;
 
-  const _setTheme = (theme: Theme) => {
-    localStorage.setItem(ThemeProps.key, theme);
-    document.documentElement.classList.remove(
-      ThemeProps.light,
-      ThemeProps.dark,
-    );
-    document.documentElement.classList.add(theme);
-    setTheme(theme);
-    const themeWrapper = document.querySelector(".theme-wrapper");
-    const bgImg = theme === "light" ? "/web_bg.png" : "/web_bg_dark.png";
-    if (themeWrapper) {
-      (themeWrapper as HTMLElement).style.backgroundImage = `url(${bgImg})`;
-    }
-    const meta = document.querySelector('meta[name="theme-color"]');
-    meta?.setAttribute('content', theme === ThemeProps.light ? '#DDE4F9' : '#093743');
-  };
+  window.localStorage.setItem(ThemeProps.key, theme);
 
-  const setLightTheme = () => _setTheme(ThemeProps.light);
+  document.documentElement.classList.remove(ThemeProps.light, ThemeProps.dark);
+  document.documentElement.classList.add(theme);
 
-  const setDarkTheme = () => _setTheme(ThemeProps.dark);
+  applyThemeWrapperBg(theme);
+}
 
-  const toggleTheme = () =>
-    theme === ThemeProps.dark ? setLightTheme() : setDarkTheme();
+function applyThemeWrapperBg(theme: Theme) {
+  if (!canUseDOM) return;
+  const themeWrapper = document.querySelector(".theme-wrapper");
+  const bgImg = theme === "light" ? "/web_bg.png" : "/web_bg_dark.png";
+  if (themeWrapper) (themeWrapper as HTMLElement).style.backgroundImage = `url(${bgImg})`;
+}
+
+function emit() {
+  listeners.forEach((l) => l());
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot() {
+  return currentTheme;
+}
+
+function getServerSnapshot() {
+  // SSR 时的快照
+  return ThemeProps.light;
+}
+
+// 初始化：只在浏览器做一次
+if (canUseDOM) {
+  currentTheme = readThemeFromStorage();
+  applyThemeToDom(currentTheme);
+}
+
+function setThemeGlobal(next: Theme) {
+  if (next === currentTheme) return;
+  currentTheme = next;
+  applyThemeToDom(next);
+  emit();
+}
+
+export function useTheme() {
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  const isDark = useMemo(() => theme === ThemeProps.dark, [theme]);
+  const isLight = useMemo(() => theme === ThemeProps.light, [theme]);
 
   useEffect(() => {
-    _setTheme(theme);
-  });
+    applyThemeWrapperBg(theme);
+  }, [theme]);
+
+  const setLightTheme = useCallback(() => setThemeGlobal(ThemeProps.light), []);
+  const setDarkTheme = useCallback(() => setThemeGlobal(ThemeProps.dark), []);
+  const toggleTheme = useCallback(() => {
+    setThemeGlobal(theme === ThemeProps.dark ? ThemeProps.light : ThemeProps.dark);
+  }, [theme]);
 
   return { theme, isDark, isLight, setLightTheme, setDarkTheme, toggleTheme };
-};
+}

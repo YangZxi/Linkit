@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./markdown.css";
 
 @plugin "../../hero.ts";
 @source "../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
@@ -33,3 +34,4 @@
 .upload-scrollbar::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, rgba(99, 102, 241, 0.6), rgba(34, 211, 238, 0.7));
 }
+
