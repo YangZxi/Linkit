@@ -18,7 +18,7 @@ interface ShareInfoResponse {
 }
 
 type ShareState = {
-  status: "loading" | "first" | "success" | "error";
+  status: "none" | "loading" | "success" | "error";
   data?: ShareInfoResponse;
   msg?: string;
   code?: number;
@@ -38,7 +38,9 @@ export default function SharePage() {
   const loadShareInfo = () => {
     setShareState({ status: "loading" });
     const query = password ? `?pwd=${encodeURIComponent(password)}` : "";
-    const res = api.get<ShareInfoResponse>(`/share/${code}${query}`);
+    const res = api.get<ShareInfoResponse>(`/share/${code}${query}`, {
+      hideToast: !urlPwd,
+    });
     setTimeout(() => {
       res.then((data) => {
         history.replaceState({}, "", `/s/${code}${query}`);
@@ -46,7 +48,7 @@ export default function SharePage() {
       }).catch((err: ApiResponse<unknown>) => {
         // 首次进入
         if (!password && (err.code === 401 || err.code === 403)) {
-          setShareState({ status: "first" });
+          setShareState({ status: "none" });
           return;
         }
         if (urlPwd) {
