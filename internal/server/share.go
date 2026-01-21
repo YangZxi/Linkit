@@ -31,7 +31,7 @@ func ShareInfoHandler(store *db.DB) gin.HandlerFunc {
 		}
 		ctx, cancel := store.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
-		record, err := store.Resource.GetShareByCode(ctx, code)
+		record, err := store.Share.GetShareByCode(ctx, code)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("查询失败", 500))
 			return
@@ -58,7 +58,7 @@ func DownloadHandler(store *db.DB, reg *storage.Registry) gin.HandlerFunc {
 		}
 		ctx, cancel := store.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
-		record, err := store.Resource.GetShareByCode(ctx, code)
+		record, err := store.Share.GetShareByCode(ctx, code)
 		if err != nil {
 			reg.Logger.Error("获取短链失败", "err", err)
 			c.JSON(http.StatusInternalServerError, Fail[any]("资源不存在", 404))
@@ -72,7 +72,7 @@ func DownloadHandler(store *db.DB, reg *storage.Registry) gin.HandlerFunc {
 			return
 		}
 
-		if err := store.Resource.IncrementShareViewCount(ctx, record.ShareID); err != nil {
+		if err := store.Share.IncrementShareViewCount(ctx, record.ShareID); err != nil {
 			reg.Logger.Error("更新短链访问次数失败", "err", err, "code", code)
 		}
 
@@ -322,7 +322,7 @@ func CreateShareHandler(store *db.DB) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, Fail[any]("资源不存在", 404))
 			return
 		}
-		shareRecord, err := store.Resource.CreateShareCode(ctx, req.ResourceID, user.ID, &password, expireTime)
+		shareRecord, err := store.Share.CreateShareCode(ctx, req.ResourceID, user.ID, &password, expireTime)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("创建分享失败", 500))
 			return

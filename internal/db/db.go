@@ -79,6 +79,7 @@ type DB struct {
 	AppConfig *AppConfigDao
 	User      *UserDao
 	Resource  *ResourceDao
+	Share     *ShareDao
 }
 
 func NewStore(cfg config.Config, logger *slog.Logger, init bool) (*DB, error) {
@@ -93,6 +94,7 @@ func NewStore(cfg config.Config, logger *slog.Logger, init bool) (*DB, error) {
 	store.Resource = &ResourceDao{store: store}
 	store.User = &UserDao{store: store}
 	store.AppConfig = &AppConfigDao{store: store}
+	store.Share = &ShareDao{store: store}
 	if init {
 		if err := store.upgradeSchema(context.Background()); err != nil {
 			return nil, err
