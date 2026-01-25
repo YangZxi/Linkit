@@ -18,7 +18,7 @@ import {
   addToast,
   Input,
   Alert,
-  Snippet,
+  NumberInput,
 } from "@heroui/react";
 import clsx from "clsx";
 import { Icon } from "@iconify/react";
@@ -33,6 +33,7 @@ import XModal from "./modal";
 const PAGE_SIZE = 10;
 const SHARE_PASSWORD_MIN = 4;
 const SHARE_PASSWORD_MAX = 32;
+type ShareDurationUnit = "minutes" | "hours" | "days";
 
 function formatDateText(value: string) {
   const date = new Date(value);
@@ -46,6 +47,50 @@ function formatDateText(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function buildExpireDateTime(
+  duration: number,
+  unit: ShareDurationUnit,
+): string | null {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return null;
+  }
+
+  const target = new Date();
+
+  // 根据选择的单位计算过期时间
+  if (unit === "minutes") {
+    target.setMinutes(target.getMinutes() + duration);
+  } else if (unit === "hours") {
+    target.setHours(target.getHours() + duration);
+  } else if (unit === "days") {
+    target.setDate(target.getDate() + duration);
+  } else {
+    return null;
+  }
+
+  const pad = (num: number) => String(num).padStart(2, "0");
+
+  const datetime = [
+    target.getFullYear(),
+    pad(target.getMonth() + 1),
+    pad(target.getDate()),
+  ].join("-") +
+    ` ${pad(target.getHours())}:${pad(target.getMinutes())}:${pad(target.getSeconds())}`;
+
+  return datetime;
+}
+
+function buidlPwd(length: number = 4): string {
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let pwd = "";
+
+  for (let i = 0; i < length; i += 1) {
+    pwd += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return pwd;
 }
 
 function TypeMark({ type }: { type: MediaType }) {
@@ -251,8 +296,13 @@ export default function GalleryGrid() {
   const [error, setError] = useState<string | null>(null);
   const [origin, setOrigin] = useState("");
   const [preview, setPreview] = useState<GalleryItem | null>(null);
+
   const [share, setShare] = useState<GalleryItem | null>(null);
   const [sharePassword, setSharePassword] = useState("");
+  const [shareDuration, setShareDuration] = useState<number>(0);
+  const [shareExpireTime, setShareExpireTime] = useState<string | null>(null);
+  const [shareDurationUnit, setShareDurationUnit] = useState<ShareDurationUnit>("days");
+
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [shareSubmitting, setShareSubmitting] = useState(false);
@@ -270,8 +320,10 @@ export default function GalleryGrid() {
 
   useEffect(() => {
     if (share) {
-      setSharePassword("");
+      setSharePassword(buidlPwd(4));
       setShareResult(null);
+      setShareDuration(0);
+      setShareExpireTime(null);
     }
   }, [share]);
 
@@ -413,6 +465,7 @@ export default function GalleryGrid() {
       const res = await api.post<CreateShareResponse>("/share", {
         resourceId: share.id,
         password: trimmedPassword,
+        expireTime: shareExpireTime,
       });
       const shareUrl = origin
         ? `${origin}/s/${res.code}`
@@ -677,7 +730,7 @@ export default function GalleryGrid() {
         </p>)}
       </XModal>
 
-      {/* share preview modal */}
+      {/* create share modal */}
       <XModal
         isDismissable={false}
         isOpen={Boolean(share)}
@@ -696,12 +749,75 @@ export default function GalleryGrid() {
         <Input
           autoFocus
           isDisabled={shareSubmitting || Boolean(shareResult)}
-          label="分享密码"
+          label="分享密码 (4-32位)"
           maxLength={SHARE_PASSWORD_MAX}
           minLength={SHARE_PASSWORD_MIN}
           type="text"
           value={sharePassword}
           onValueChange={setSharePassword}
+          // endContent={
+          //   <Button 
+          //     isIconOnly
+          //     color="primary"
+          //     variant="flat"
+          //     isDisabled={shareSubmitting || Boolean(shareResult)}
+          //     onPress={() => {
+          //       if (shareSubmitting || shareResult) return;
+          //       setSharePassword(buidlPwd(6));
+          //     }}
+          //   >
+          //     <Icon width={28} height={28} icon="iconoir:refresh-circle-solid"/>
+          //   </Button>
+          // }
+        />
+        <NumberInput
+          value={shareDuration}
+          onValueChange={(val) => {
+            setShareDuration(val);
+            setShareExpireTime(buildExpireDateTime(val, shareDurationUnit));
+          }}
+          defaultValue={0}
+          minValue={0}
+          isDisabled={shareSubmitting || Boolean(shareResult)}
+          endContent={
+            <div className="flex items-center">
+              <label className="sr-only" htmlFor="time-unit">
+                Time Unit
+              </label>
+              <select
+                aria-label="Select time unit"
+                className="outline-solid outline-transparent border-0 bg-transparent text-default-400 text-small"
+                value={shareDurationUnit}
+                id="time-unit"
+                name="time-unit"
+                onChange={(event) => {
+                  const nextUnit = event.target.value as ShareDurationUnit;
+
+                  setShareDurationUnit(nextUnit);
+                  setShareExpireTime(buildExpireDateTime(shareDuration, nextUnit));
+                }}
+              >
+                <option aria-label="minutes" value="minutes">
+                  分钟
+                </option>
+                <option aria-label="hours" value="hours">
+                  小时
+                </option>
+                <option aria-label="days" value="days">
+                  天
+                </option>
+              </select>
+            </div>
+          }
+          label={"有效期 (为 0 表示永不过期)"}
+          placeholder="0"
+          className="max-w-[270px]"
+        />
+        <Input label="过期时间" type="text" 
+          readOnly
+          isDisabled={shareSubmitting || Boolean(shareResult)}
+          value={shareExpireTime as unknown as string} 
+          size="sm" variant="underlined" placeholder="请先在上方输入有效期"
         />
         {shareResult && (
           <Alert

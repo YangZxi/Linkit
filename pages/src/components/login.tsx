@@ -73,8 +73,8 @@ export default function Login() {
               <ModalHeader className="flex flex-col gap-1">登录</ModalHeader>
               <ModalBody>
                 <div className="space-y-3">
-                  <Input label="Email" name="username" placeholder="请输入邮箱或用户名" type="text" onValueChange={(value) => setUsername(value)} />
-                  <Input label="Password" name="password" placeholder="请输入密码" type="password" onValueChange={(value) => setPassword(value)} />
+                  <Input label="用户名" name="username" placeholder="请输入用户名户名" type="text" onValueChange={(value) => setUsername(value)} />
+                  <Input label="密码" name="password" placeholder="请输入密码" type="password" onValueChange={(value) => setPassword(value)} />
                 </div>
               </ModalBody>
               <ModalFooter>
