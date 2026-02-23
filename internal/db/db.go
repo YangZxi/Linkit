@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS "share" (
   user_id INTEGER NOT NULL,
   password TEXT,
   expire_time DATETIME,
+  relay INTEGER NOT NULL DEFAULT 0,
   view_count INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -140,6 +141,9 @@ func (s *DB) upgradeSchema(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureColumn(ctx, "share", "expire_time", "expire_time DATETIME"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "share", "relay", "relay INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	return nil

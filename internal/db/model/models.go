@@ -30,6 +30,7 @@ type ShareCode struct {
 	UserID     int64     `db:"user_id" json:"user_id"`
 	Code       string    `db:"code" json:"code"`
 	ViewCount  int64     `db:"view_count" json:"viewCount"`
+	Relay      bool      `db:"relay" json:"relay"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }
 
@@ -51,6 +52,7 @@ type ShareResource struct {
 	Filename   string     `json:"filename"`
 	Path       string     `json:"path"`
 	Type       string     `json:"type"`
+	Relay      bool       `json:"relay"`
 	ViewCount  int64      `json:"viewCount"`
 	CreatedAt  time.Time  `json:"created_at"`
 	Password   *string    `json:"-"`

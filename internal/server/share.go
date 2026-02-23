@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,85 +85,102 @@ func DownloadHandler(store *db.DB, reg *storage.Registry) gin.HandlerFunc {
 		}
 		reg.Logger.Debug("处理分享请求", "code", code, "file", record.Filename, "storage", storageDriver.Platform())
 
-		// 云端文件：重定向到带签名的下载链接。
 		if storageDriver.Platform() != storage.PlatformLocal {
-			signed, err := storageDriver.GetURL(record.Path, 30*time.Minute)
-			if err != nil {
-				reg.Logger.Error("生成签名链接失败", "err", err)
-				c.JSON(http.StatusInternalServerError, Fail[any]("资源失效", 410))
-				return
-			}
-			c.Redirect(http.StatusFound, signed)
+			downloadForS3(c, reg, code, record, storageDriver)
 			return
 		}
 
-		// 本地文件：直接传输文件内容。
-		filePath, err := storageDriver.GetURL(record.Path, 0)
-		if err != nil {
-			reg.Logger.Error("获取本地文件路径失败", "err", err)
-			c.JSON(http.StatusInternalServerError, Fail[any]("资源失效", 410))
-			return
-		}
-		f, err := os.Open(filePath)
-		if err != nil {
-			reg.Logger.Error("打开文件失败", "err", err)
-			c.JSON(http.StatusGone, Fail[any]("文件已失效", 410))
-			return
-		}
-		defer f.Close()
-		stat, err := f.Stat()
-		if err != nil {
-			reg.Logger.Error("读取文件信息失败", "err", err)
-			c.JSON(http.StatusGone, Fail[any]("文件已失效", 410))
-			return
-		}
-		// 本地文件：允许浏览器缓存，并通过 ETag/Last-Modified 协商避免重复下载。
-		etag := buildWeakETag(stat)
-		setCacheHeaders(c, stat, etag)
-		if isNotModified(c, stat, etag) {
-			c.Status(http.StatusNotModified)
-			return
-		}
-		contentType := record.Type
-		if contentType == "" {
-			contentType = storage.GuessMime(record.Filename)
-		}
-		rangeHeader := c.GetHeader("Range")
-		if rangeHeader != "" {
-			start, end, ok := parseRange(rangeHeader, stat.Size())
-			if !ok {
-				c.JSON(http.StatusRequestedRangeNotSatisfiable, Fail[any]("Range 无效", 416))
-				return
-			}
-			if _, err := f.Seek(start, io.SeekStart); err != nil {
-				c.JSON(http.StatusInternalServerError, Fail[any]("读取失败", 500))
-				return
-			}
-			length := end - start + 1
-			c.Status(http.StatusPartialContent)
-			c.Header("Content-Type", contentType)
-			c.Header("Content-Length", strconv.FormatInt(length, 10))
-			c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, stat.Size()))
-			c.Header("Accept-Ranges", "bytes")
-			c.Header("Content-Disposition", buildContentDisposition(filepath.Base(record.Filename), true))
-			if c.Request.Method == http.MethodHead {
-				return
-			}
-			io.CopyN(c.Writer, f, length)
-			return
-		}
+		downloadForLocal(c, reg, code, record, storageDriver)
+	}
+}
 
+func downloadForS3(c *gin.Context, reg *storage.Registry, code string, record *model.ShareResource, storageDriver storage.Storage) {
+	// 云端文件：默认重定向到带签名链接，开启 relay 时改为服务端代理传输。
+	signed, err := storageDriver.GetURL(record.Path, 30*time.Minute)
+	if err != nil {
+		reg.Logger.Error("生成签名链接失败", "err", err)
+		c.JSON(http.StatusInternalServerError, Fail[any]("资源失效", 410))
+		return
+	}
+	if !record.Relay {
+		c.Redirect(http.StatusFound, signed)
+		return
+	}
+	if err := relayRemoteFile(c, signed, record); err != nil {
+		reg.Logger.Error("代理下载失败", "err", err, "code", code)
+		if !c.Writer.Written() {
+			c.JSON(http.StatusBadGateway, Fail[any]("文件转发失败", 502))
+		}
+	}
+}
+
+func downloadForLocal(c *gin.Context, reg *storage.Registry, code string, record *model.ShareResource, storageDriver storage.Storage) {
+	// 本地文件：直接传输文件内容。
+	filePath, err := storageDriver.GetURL(record.Path, 0)
+	if err != nil {
+		reg.Logger.Error("获取本地文件路径失败", "err", err)
+		c.JSON(http.StatusInternalServerError, Fail[any]("资源失效", 410))
+		return
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		reg.Logger.Error("打开文件失败", "err", err)
+		c.JSON(http.StatusGone, Fail[any]("文件已失效", 410))
+		return
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		reg.Logger.Error("读取文件信息失败", "err", err)
+		c.JSON(http.StatusGone, Fail[any]("文件已失效", 410))
+		return
+	}
+	// 本地文件：允许浏览器缓存，并通过 ETag/Last-Modified 协商避免重复下载。
+	etag := buildWeakETag(stat)
+	setCacheHeaders(c, stat, etag)
+	if isNotModified(c, stat, etag) {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	contentType := record.Type
+	if contentType == "" {
+		contentType = storage.GuessMime(record.Filename)
+	}
+	rangeHeader := c.GetHeader("Range")
+	if rangeHeader != "" {
+		start, end, ok := parseRange(rangeHeader, stat.Size())
+		if !ok {
+			c.JSON(http.StatusRequestedRangeNotSatisfiable, Fail[any]("Range 无效", 416))
+			return
+		}
+		if _, err := f.Seek(start, io.SeekStart); err != nil {
+			c.JSON(http.StatusInternalServerError, Fail[any]("读取失败", 500))
+			return
+		}
+		length := end - start + 1
+		c.Status(http.StatusPartialContent)
 		c.Header("Content-Type", contentType)
-		c.Header("Content-Length", strconv.FormatInt(stat.Size(), 10))
+		c.Header("Content-Length", strconv.FormatInt(length, 10))
+		c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, stat.Size()))
 		c.Header("Accept-Ranges", "bytes")
 		c.Header("Content-Disposition", buildContentDisposition(filepath.Base(record.Filename), true))
-		c.Status(http.StatusOK)
 		if c.Request.Method == http.MethodHead {
 			return
 		}
-		io.Copy(c.Writer, f)
-		reg.Logger.Info("完成文件传输", "code", code, "file", record.Filename, "size", stat.Size())
+		io.CopyN(c.Writer, f, length)
+		return
 	}
+
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Length", strconv.FormatInt(stat.Size(), 10))
+	c.Header("Accept-Ranges", "bytes")
+	c.Header("Content-Disposition", buildContentDisposition(filepath.Base(record.Filename), true))
+	c.Status(http.StatusOK)
+	if c.Request.Method == http.MethodHead {
+		return
+	}
+	io.Copy(c.Writer, f)
+	reg.Logger.Info("完成文件传输", "code", code, "file", record.Filename, "size", stat.Size())
 }
 
 func buildWeakETag(stat os.FileInfo) string {
@@ -282,6 +300,7 @@ type createShareRequest struct {
 	ResourceID int64   `json:"resourceId"`
 	Password   string  `json:"password"`
 	ExpireTime *string `json:"expireTime"`
+	Relay      bool    `json:"relay"`
 }
 
 type createShareResponse struct {
@@ -322,7 +341,7 @@ func CreateShareHandler(store *db.DB) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, Fail[any]("资源不存在", 404))
 			return
 		}
-		shareRecord, err := store.Share.CreateShareCode(ctx, req.ResourceID, user.ID, &password, expireTime)
+		shareRecord, err := store.Share.CreateShareCode(ctx, req.ResourceID, user.ID, &password, expireTime, req.Relay)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("创建分享失败", 500))
 			return
@@ -358,6 +377,82 @@ func parseExpireTime(raw *string) (*time.Time, error) {
 		}
 	}
 	return nil, fmt.Errorf("过期时间格式错误")
+}
+
+var relayForwardRequestHeaders = []string{
+	"Range",
+	"If-Modified-Since",
+	"If-None-Match",
+}
+
+var relayForwardResponseHeaders = []string{
+	"Accept-Ranges",
+	"Cache-Control",
+	"Content-Length",
+	"Content-Range",
+	"Content-Type",
+	"Content-Disposition",
+	"ETag",
+	"Last-Modified",
+	"Expires",
+}
+
+var relayHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		MaxIdleConns:        100,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	},
+}
+
+func relayRemoteFile(c *gin.Context, signedURL string, record *model.ShareResource) error {
+	method := c.Request.Method
+	if method != http.MethodGet && method != http.MethodHead {
+		c.JSON(http.StatusMethodNotAllowed, Fail[any]("请求方法不支持", 405))
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(c.Request.Context(), method, signedURL, nil)
+	if err != nil {
+		return err
+	}
+	for _, header := range relayForwardRequestHeaders {
+		value := strings.TrimSpace(c.GetHeader(header))
+		if value != "" {
+			req.Header.Set(header, value)
+		}
+	}
+
+	resp, err := relayHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	for _, header := range relayForwardResponseHeaders {
+		if value := strings.TrimSpace(resp.Header.Get(header)); value != "" {
+			c.Header(header, value)
+		}
+	}
+	if strings.TrimSpace(resp.Header.Get("Content-Disposition")) == "" {
+		c.Header("Content-Disposition", buildContentDisposition(filepath.Base(record.Filename), true))
+	}
+	if strings.TrimSpace(resp.Header.Get("Content-Type")) == "" {
+		contentType := record.Type
+		if contentType == "" {
+			contentType = storage.GuessMime(record.Filename)
+		}
+		c.Header("Content-Type", contentType)
+	}
+
+	c.Status(resp.StatusCode)
+	if method == http.MethodHead || resp.StatusCode == http.StatusNotModified {
+		return nil
+	}
+	_, err = io.Copy(c.Writer, resp.Body)
+	return err
 }
 
 func isDigits(value string) bool {

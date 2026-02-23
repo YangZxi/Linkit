@@ -28,7 +28,7 @@ func randomCode(n int) (string, error) {
 	return string(buf), nil
 }
 
-func (s *ShareDao) CreateShareCode(ctx context.Context, resourceID int64, userID int64, password *string, expireTime *time.Time) (*model.ShareCode, error) {
+func (s *ShareDao) CreateShareCode(ctx context.Context, resourceID int64, userID int64, password *string, expireTime *time.Time, relay bool) (*model.ShareCode, error) {
 	for i := 0; i < 5; i++ {
 		code, err := randomCode(6)
 		if err != nil {
@@ -42,9 +42,9 @@ func (s *ShareDao) CreateShareCode(ctx context.Context, resourceID int64, userID
 		if expireTime != nil {
 			expireValue = sql.NullTime{Time: *expireTime, Valid: true}
 		}
-		row := s.store.Client.QueryRowContext(ctx, `INSERT INTO share(resource_id, user_id, code, password, expire_time, created_at) VALUES(?,?,?,?,?, CURRENT_TIMESTAMP) RETURNING id, resource_id, user_id, code, view_count, created_at`, resourceID, userID, code, passwordValue, expireValue)
+		row := s.store.Client.QueryRowContext(ctx, `INSERT INTO share(resource_id, user_id, code, password, expire_time, relay, created_at) VALUES(?,?,?,?,?,?, CURRENT_TIMESTAMP) RETURNING id, resource_id, user_id, code, view_count, relay, created_at`, resourceID, userID, code, passwordValue, expireValue, relay)
 		var sc model.ShareCode
-		if err := row.Scan(&sc.ID, &sc.ResourceID, &sc.UserID, &sc.Code, &sc.ViewCount, &sc.CreatedAt); err != nil {
+		if err := row.Scan(&sc.ID, &sc.ResourceID, &sc.UserID, &sc.Code, &sc.ViewCount, &sc.Relay, &sc.CreatedAt); err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				continue
 			}
@@ -57,7 +57,7 @@ func (s *ShareDao) CreateShareCode(ctx context.Context, resourceID int64, userID
 
 func (s *ShareDao) GetShareByCode(ctx context.Context, code string) (*model.ShareResource, error) {
 	row := s.store.Client.QueryRowContext(ctx, `
-SELECT sc.id as share_id, sc.code, sc.resource_id, sc.user_id, r.filename, r.path, r.type, sc.view_count, r.created_at, sc.password, sc.expire_time
+SELECT sc.id as share_id, sc.code, sc.resource_id, sc.user_id, r.filename, r.path, r.type, sc.relay, sc.view_count, r.created_at, sc.password, sc.expire_time
 FROM share sc
 JOIN resource r ON r.id = sc.resource_id
 WHERE sc.code = ?
@@ -66,7 +66,7 @@ LIMIT 1;
 	var res model.ShareResource
 	var password sql.NullString
 	var expireTime sql.NullTime
-	if err := row.Scan(&res.ShareID, &res.Code, &res.ResourceID, &res.UserID, &res.Filename, &res.Path, &res.Type, &res.ViewCount, &res.CreatedAt, &password, &expireTime); err != nil {
+	if err := row.Scan(&res.ShareID, &res.Code, &res.ResourceID, &res.UserID, &res.Filename, &res.Path, &res.Type, &res.Relay, &res.ViewCount, &res.CreatedAt, &password, &expireTime); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -95,4 +95,3 @@ func (s *ShareDao) GetTotalViewCount(ctx context.Context) (int64, error) {
 	}
 	return totalViews, nil
 }
-

@@ -19,6 +19,7 @@ import {
   Input,
   Alert,
   NumberInput,
+  Switch,
 } from "@heroui/react";
 import clsx from "clsx";
 import { Icon } from "@iconify/react";
@@ -302,6 +303,7 @@ export default function GalleryGrid() {
   const [shareDuration, setShareDuration] = useState<number>(0);
   const [shareExpireTime, setShareExpireTime] = useState<string | null>(null);
   const [shareDurationUnit, setShareDurationUnit] = useState<ShareDurationUnit>("days");
+  const [shareRelay, setShareRelay] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -324,6 +326,7 @@ export default function GalleryGrid() {
       setShareResult(null);
       setShareDuration(0);
       setShareExpireTime(null);
+      setShareRelay(false);
     }
   }, [share]);
 
@@ -466,6 +469,7 @@ export default function GalleryGrid() {
         resourceId: share.id,
         password: trimmedPassword,
         expireTime: shareExpireTime,
+        relay: shareRelay,
       });
       const shareUrl = origin
         ? `${origin}/s/${res.code}`
@@ -486,7 +490,7 @@ export default function GalleryGrid() {
     } finally {
       setShareSubmitting(false);
     }
-  }, [fetchData, origin, page, share, shareResult, sharePassword, shareSubmitting]);
+  }, [fetchData, origin, page, share, shareRelay, shareResult, sharePassword, shareSubmitting]);
 
   const isDeleting = Boolean(deleteTarget && deletingId === deleteTarget.id);
 
@@ -819,6 +823,15 @@ export default function GalleryGrid() {
           value={shareExpireTime as unknown as string} 
           size="sm" variant="underlined" placeholder="请先在上方输入有效期"
         />
+        <Switch
+          defaultSelected={false}
+          isDisabled={shareSubmitting || Boolean(shareResult)}
+          isSelected={shareRelay}
+          size="sm"
+          onValueChange={setShareRelay}
+        >
+          {shareRelay ? "开启" : "关闭"}资源加速（适用于使用 S3 时，使用服务器转发文件，仅非 local 存储生效）
+        </Switch>
         {shareResult && (
           <Alert
             color="success"
