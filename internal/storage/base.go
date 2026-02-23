@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"linkit/internal/config"
@@ -28,6 +29,7 @@ type Storage interface {
 }
 
 type Registry struct {
+	mu            sync.RWMutex
 	DefaultDriver BucketPlatform
 	Storages      map[BucketPlatform]Storage
 	Logger        *slog.Logger
@@ -110,36 +112,82 @@ func ParseStoredPath(storedPath string) (platform BucketPlatform, bucket string,
 	return p, prefixParts[1], key, nil
 }
 
-func SetupRegistry(cfg config.Config, logger *slog.Logger) (*Registry, error) {
+func buildStorages(cfg config.Config, logger *slog.Logger) (BucketPlatform, map[BucketPlatform]Storage, error) {
 	platform, err := NormalizeDriver(cfg.AppConfig.StorageDriver)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	reg := &Registry{DefaultDriver: platform, Storages: make(map[BucketPlatform]Storage), Logger: logger}
+	storages := make(map[BucketPlatform]Storage)
 
 	local, err := NewLocal(cfg.LocalRoot)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	reg.Storages[PlatformLocal] = local
+	storages[PlatformLocal] = local
 
 	if platform == PlatformS3 || (cfg.AppConfig.S3Bucket != "" && cfg.AppConfig.S3AccessKey != "" && cfg.AppConfig.S3SecretKey != "" && cfg.AppConfig.S3Endpoint != "") {
 		s3, err := NewS3(cfg, logger)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		reg.Storages[PlatformS3] = s3
+		storages[PlatformS3] = s3
 	}
 	if platform == PlatformS3 {
-		if _, ok := reg.Storages[PlatformS3]; !ok {
-			return nil, fmt.Errorf("已选择 S3 存储驱动，但缺少必要配置")
+		if _, ok := storages[PlatformS3]; !ok {
+			return "", nil, fmt.Errorf("已选择 S3 存储驱动，但缺少必要配置")
 		}
+	}
+	return platform, storages, nil
+}
+
+func SetupRegistry(cfg config.Config, logger *slog.Logger) (*Registry, error) {
+	platform, storages, err := buildStorages(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	reg := &Registry{
+		DefaultDriver: platform,
+		Storages:      storages,
+		Logger:        logger,
 	}
 	logger.Info(fmt.Sprintf("初始化 Storage 成功，%s", platform))
 	return reg, nil
 }
 
+func (r *Registry) Reload(cfg config.Config) error {
+	platform, storages, err := buildStorages(cfg, r.Logger)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.DefaultDriver = platform
+	r.Storages = storages
+	r.mu.Unlock()
+	r.Logger.Info("存储配置热更新成功", "driver", platform)
+	return nil
+}
+
+func (r *Registry) Validate(cfg config.Config) error {
+	_, _, err := buildStorages(cfg, r.Logger)
+	return err
+}
+
+func (r *Registry) CurrentDriver() BucketPlatform {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.DefaultDriver
+}
+
+func (r *Registry) Get(platform BucketPlatform) (Storage, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	s, ok := r.Storages[platform]
+	return s, ok
+}
+
 func (r *Registry) Active() Storage {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.Storages[r.DefaultDriver]
 }
 
@@ -148,7 +196,9 @@ func (r *Registry) ByStoredPath(path string) (Storage, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.mu.RLock()
 	s, ok := r.Storages[plat]
+	r.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("未找到存储驱动: %s", plat)
 	}

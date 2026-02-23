@@ -87,7 +87,7 @@ func main() {
 		apiAdmin.Use(middleware.AdminRequired(cfg))
 		apiAdmin.GET("/stats", server.AdminDashboardStatsHandler(store))
 		apiAdmin.GET("/config", server.AdminGetConfigHandler(store, &cfg))
-		apiAdmin.POST("/config", server.AdminUpsertConfigHandler(store, &cfg))
+		apiAdmin.POST("/config", server.AdminUpsertConfigHandler(store, &cfg, storageReg))
 		apiAdmin.POST("/password", server.AdminChangePasswordHandler(store, cfg))
 	}
 

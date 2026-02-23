@@ -18,10 +18,10 @@ const defaultDBName = "app.db"
 
 // StartS3DBBackup 当使用 S3 存储驱动时，启动每日数据库备份任务。
 func StartS3DBBackup(cfg config.Config, reg *storage.Registry) {
-	if reg == nil || reg.DefaultDriver != storage.PlatformS3 {
+	if reg == nil || reg.CurrentDriver() != storage.PlatformS3 {
 		return
 	}
-	storage, ok := reg.Storages[storage.PlatformS3]
+	s3Storage, ok := reg.Get(storage.PlatformS3)
 	if !ok {
 		reg.Logger.Warn("S3 存储未初始化，跳过数据库备份")
 		return
@@ -35,7 +35,7 @@ func StartS3DBBackup(cfg config.Config, reg *storage.Registry) {
 
 	logger := reg.Logger
 	go func() {
-		backupOnce(dbPath, storage, logger)
+		backupOnce(dbPath, s3Storage, logger)
 	}()
 	go func() {
 		logger.Info("启动 S3 数据库备份任务", "path", dbPath)
@@ -49,7 +49,7 @@ func StartS3DBBackup(cfg config.Config, reg *storage.Registry) {
 				return
 			case <-timer.C:
 			}
-			if err := backupOnce(dbPath, storage, logger); err != nil {
+			if err := backupOnce(dbPath, s3Storage, logger); err != nil {
 				logger.Error("数据库备份失败", "err", err)
 			}
 		}

@@ -12,6 +12,7 @@ import (
 	"linkit/internal/config"
 	"linkit/internal/db"
 	"linkit/internal/db/model"
+	"linkit/internal/storage"
 )
 
 type adminConfigItem struct {
@@ -61,7 +62,7 @@ func AdminGetConfigHandler(store *db.DB, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func AdminUpsertConfigHandler(store *db.DB, cfg *config.Config) gin.HandlerFunc {
+func AdminUpsertConfigHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req adminUpsertConfigPayload
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -73,9 +74,7 @@ func AdminUpsertConfigHandler(store *db.DB, cfg *config.Config) gin.HandlerFunc 
 			return
 		}
 
-		ctx, cancel := store.WithTimeout(c.Request.Context(), 8*time.Second)
-		defer cancel()
-
+		updates := make(map[string]string, len(req.AppConfig))
 		for key, value := range req.AppConfig {
 			if value == nil {
 				continue
@@ -89,10 +88,37 @@ func AdminUpsertConfigHandler(store *db.DB, cfg *config.Config) gin.HandlerFunc 
 				c.JSON(http.StatusBadRequest, Fail[any]("配置项不在白名单中", 400))
 				return
 			}
-			if err := store.AppConfig.SetConfig(ctx, cfg, key, *value); err != nil {
+			updates[key] = *value
+		}
+		if len(updates) == 0 {
+			c.JSON(http.StatusBadRequest, Fail[any]("缺少可更新的配置项", 400))
+			return
+		}
+
+		nextCfg := *cfg
+		for key, value := range updates {
+			if ok := nextCfg.SetAppConfigValue(key, value); !ok {
+				c.JSON(http.StatusBadRequest, Fail[any]("配置值格式错误", 400))
+				return
+			}
+		}
+		if err := reg.Validate(nextCfg); err != nil {
+			c.JSON(http.StatusBadRequest, Fail[any]("存储配置无效: "+err.Error(), 400))
+			return
+		}
+
+		ctx, cancel := store.WithTimeout(c.Request.Context(), 8*time.Second)
+		defer cancel()
+
+		for key, value := range updates {
+			if err := store.AppConfig.SetConfig(ctx, cfg, key, value); err != nil {
 				c.JSON(http.StatusInternalServerError, Fail[any]("保存配置失败", 500))
 				return
 			}
+		}
+		if err := reg.Reload(*cfg); err != nil {
+			c.JSON(http.StatusInternalServerError, Fail[any]("保存成功但热更新失败，请检查配置后重试", 500))
+			return
 		}
 
 		c.JSON(http.StatusOK, Ok(gin.H{"success": true}, "保存成功"))
