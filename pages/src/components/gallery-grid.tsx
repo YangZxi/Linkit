@@ -121,6 +121,7 @@ function GalleryCard({
   const rawUrl = item.shareCode ? `/r/${item.shareCode}` : "";
   const shareUrl =
     item.shareCode && origin ? `${origin}/s/${item.shareCode}` : "";
+  const storageLabel = item.storage === "local" ? "本地" : "S3";
 
   const cover = (() => {
     if (!rawUrl) {
@@ -229,11 +230,11 @@ function GalleryCard({
         </div>
         {item.shareCode ? (
           <span className="absolute bottom-3 right-3 rounded-full bg-default-900/70 px-3 py-1 text-[11px] text-white backdrop-blur dark:bg-default-100/30">
-            短链 {item.shareCode}
+            {storageLabel} {item.shareCode}
           </span>
         ) : (
           <span className="absolute bottom-3 right-3 rounded-full bg-danger-500/80 px-3 py-1 text-[11px] text-white backdrop-blur">
-            暂无短链
+            暂无短链（{storageLabel}）
           </span>
         )}
       </div>

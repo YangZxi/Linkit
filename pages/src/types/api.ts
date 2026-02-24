@@ -31,6 +31,7 @@ export type GalleryItem = {
   id: number;
   filename: string;
   type: string;
+  storage: "local" | "s3";
   createdAt: string;
   shareCode: string | null;
 };

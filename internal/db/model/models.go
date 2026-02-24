@@ -40,6 +40,7 @@ type UserResourceWithShare struct {
 	ID        int64     `json:"id"`
 	Filename  string    `json:"filename"`
 	Type      string    `json:"type"`
+	Storage   string    `json:"storage"`
 	CreatedAt time.Time `json:"createdAt"`
 	ShareCode *string   `json:"shareCode"`
 }

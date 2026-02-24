@@ -34,6 +34,10 @@ func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size i
 
 	query := `
 SELECT r.id, r.filename, r.type, r.created_at,
+       CASE
+         WHEN r.path LIKE 'local@/%' THEN 'local'
+         ELSE 's3'
+       END as storage,
        (SELECT sc.code FROM share sc WHERE sc.resource_id = r.id AND (sc.password IS NULL OR sc.password = '') ORDER BY sc.created_at DESC LIMIT 1) as share_code
 FROM resource r
 WHERE r.user_id = ?
@@ -49,7 +53,7 @@ LIMIT ? OFFSET ?;
 	items := make([]model.UserResourceWithShare, 0)
 	for rows.Next() {
 		var item model.UserResourceWithShare
-		if err := rows.Scan(&item.ID, &item.Filename, &item.Type, &item.CreatedAt, &item.ShareCode); err != nil {
+		if err := rows.Scan(&item.ID, &item.Filename, &item.Type, &item.CreatedAt, &item.Storage, &item.ShareCode); err != nil {
 			return nil, 0, err
 		}
 		items = append(items, item)
