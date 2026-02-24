@@ -1,4 +1,4 @@
-import GalleryGrid from "@/components/gallery-grid";
+import GalleryGrid from "@/pages/gallery/gallery-grid";
 
 export default function GalleryPage() {
   return (

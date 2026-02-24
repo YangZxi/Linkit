@@ -4,9 +4,8 @@ import Navbar from "./components/navbar";
 import Footer from "./components/footer";
 import HomePage from "./pages/HomePage";
 import GalleryPage from "./pages/GalleryPage";
-import PricingPage from "./pages/PricingPage";
 import AboutPage from "./pages/AboutPage";
-import SharePage from "./pages/SharePage";
+import ShareViewPage from "./pages/ShareViewPage";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import AdminConfigPage from "./pages/admin/AdminConfigPage";
@@ -29,9 +28,8 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/gallery" element={<GalleryPage />} />
-        <Route path="/pricing" element={<PricingPage />} />
         <Route path="/about" element={<AboutPage />} />
-        <Route path="/s/:code" element={<SharePage />} />
+        <Route path="/s/:code" element={<ShareViewPage />} />
         <Route element={<AdminLayout />} path="/admin">
           <Route index element={<Navigate replace to="/admin/dashboard" />} />
           <Route element={<AdminPasswordPage />} path="password" />

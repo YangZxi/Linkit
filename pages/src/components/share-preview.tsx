@@ -1,6 +1,4 @@
-"use client";
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { addToast, Button, Input } from "@heroui/react";
 import clsx from "clsx";
 

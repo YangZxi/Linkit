@@ -1,20 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { Button, Input, Spinner } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 
 import SharePreview from "@/components/share-preview";
 import { inferMediaType } from "@/lib/file";
 import api, { ApiResponse } from "@/lib/api";
 
 interface ShareInfoResponse {
-  share_id: number;
+  shareId: number;
   code: string;
-  resource_id: number;
+  resourceId: number;
   filename: string;
   path: string;
   type: string;
   viewCount: number;
-  created_at: string;
+  createdAt: string;
 }
 
 type ShareState = {

@@ -46,16 +46,16 @@ type UserResourceWithShare struct {
 }
 
 type ShareResource struct {
-	ShareID    int64      `json:"share_id"`
+	ShareID    int64      `json:"shareId"`
 	Code       string     `json:"code"`
-	ResourceID int64      `json:"resource_id"`
+	ResourceID int64      `json:"resourceId"`
 	UserID     int64      `json:"-"`
 	Filename   string     `json:"filename"`
 	Path       string     `json:"path"`
 	Type       string     `json:"type"`
 	Relay      bool       `json:"relay"`
 	ViewCount  int64      `json:"viewCount"`
-	CreatedAt  time.Time  `json:"created_at"`
+	CreatedAt  time.Time  `json:"createdAt"`
 	Password   *string    `json:"-"`
 	ExpireTime *time.Time `json:"-"`
 }
