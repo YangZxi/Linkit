@@ -104,8 +104,8 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 		fh := files[0]
 
 		uploadID := firstValue(form.Value["uploadId"], fmt.Sprintf("%d-%s", time.Now().UnixMilli(), fh.Filename))
-		fileName := filepath.Base(firstValue(form.Value["fileName"], fh.Filename))
-		fileSize := parseInt64(firstValue(form.Value["fileSize"], fmt.Sprintf("%d", fh.Size)), fh.Size)
+		fileName := filepath.Base(firstValue(form.Value["filename"], fh.Filename))
+		fileSize := parseInt64(firstValue(form.Value["filesize"], fmt.Sprintf("%d", fh.Size)), fh.Size)
 		chunkIndexPtr := parseOptionalInt64(firstValue(form.Value["chunkIndex"], ""))
 		totalChunksPtr := parseOptionalInt64(firstValue(form.Value["totalChunks"], ""))
 		chunkSizePtr := parseOptionalInt64(firstValue(form.Value["chunkSize"], ""))

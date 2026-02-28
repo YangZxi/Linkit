@@ -378,8 +378,8 @@ export default function UploadPanel({ }: UploadPanelProps = {}) {
 
         formData.append("file", item.file);
         formData.append("uploadId", item.uploadId);
-        formData.append("fileName", item.file.name);
-        formData.append("fileSize", `${item.file.size}`);
+        formData.append("filename", item.file.name);
+        formData.append("filesize", `${item.file.size}`);
 
         const xhr = new XMLHttpRequest();
 
@@ -475,8 +475,8 @@ export default function UploadPanel({ }: UploadPanelProps = {}) {
 
         formData.append("file", chunk);
         formData.append("uploadId", item.uploadId);
-        formData.append("fileName", item.file.name);
-        formData.append("fileSize", `${item.file.size}`);
+        formData.append("filename", item.file.name);
+        formData.append("filesize", `${item.file.size}`);
         formData.append("chunkIndex", `${index}`);
         formData.append("totalChunks", `${totalChunks}`);
         formData.append("chunkSize", `${CHUNK_SIZE}`);

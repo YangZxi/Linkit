@@ -1,7 +1,7 @@
 export type UploadFormRequest = {
   file: File;
-  fileName: string;
-  fileSize: number;
+  filename: string;
+  filesize: number;
   uploadId: string;
   chunkIndex: number | null;
   totalChunks: number | null;
