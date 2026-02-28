@@ -92,7 +92,7 @@ func Load() Config {
 		ChunkDir:       getEnv("CHUNK_DIR", "./data/temp/chunk"),
 		MergeDir:       getEnv("MERGE_DIR", "./data/temp/merged"),
 
-		SessionCookie:  getEnv("SESSION_COOKIE", "session_token"),
+		SessionCookie:  "session_user_id",
 		CookieMaxAge:   time.Hour * 24 * 30,
 		CookieSecure:   getEnv("COOKIE_SECURE", "false") == "true",
 		MaxFileSize:    1 << 30,                // 1GB

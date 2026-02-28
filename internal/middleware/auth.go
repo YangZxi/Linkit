@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -9,18 +10,14 @@ import (
 	"linkit/internal/db"
 	"linkit/internal/db/model"
 	"linkit/internal/server"
+	"linkit/internal/session"
 )
 
 const userContextKey = "user"
 
-func AuthOptional(store *db.DB, cfg config.Config) gin.HandlerFunc {
+func AuthOptional(store *db.DB, cfg config.Config, sessions *session.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token, err := c.Cookie(cfg.SessionCookie)
-		if err != nil || token == "" {
-			c.Next()
-			return
-		}
-		user, err := store.User.GetByToken(c.Request.Context(), token)
+		user, err := resolveUser(c, store, cfg, sessions)
 		if err != nil || user == nil {
 			c.Next()
 			return
@@ -28,6 +25,48 @@ func AuthOptional(store *db.DB, cfg config.Config) gin.HandlerFunc {
 		c.Set(userContextKey, user)
 		c.Next()
 	}
+}
+
+func resolveUser(c *gin.Context, store *db.DB, cfg config.Config, sessions *session.Manager) (*model.User, error) {
+	if token, ok := tokenFromAuthorization(c.GetHeader("Authorization")); ok {
+		if token == "" {
+			return nil, nil
+		}
+		return store.User.GetByToken(c.Request.Context(), token)
+	}
+	sessionID, ok := sessionIDFromCookie(c, cfg)
+	if !ok {
+		return nil, nil
+	}
+	userID, ok := sessions.Resolve(sessionID)
+	if !ok {
+		return nil, nil
+	}
+	return store.User.GetByID(c.Request.Context(), userID)
+}
+
+func tokenFromAuthorization(raw string) (string, bool) {
+	val := strings.TrimSpace(raw)
+	if val == "" {
+		return "", false
+	}
+	parts := strings.Fields(val)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return strings.TrimSpace(parts[1]), true
+	}
+	return val, true
+}
+
+func sessionIDFromCookie(c *gin.Context, cfg config.Config) (string, bool) {
+	raw, err := c.Cookie(cfg.SessionCookie)
+	if err != nil {
+		return "", false
+	}
+	sessionID := strings.TrimSpace(raw)
+	if sessionID == "" {
+		return "", false
+	}
+	return sessionID, true
 }
 
 func AuthRequired(store *db.DB, cfg config.Config) gin.HandlerFunc {

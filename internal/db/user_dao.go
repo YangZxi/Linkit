@@ -24,6 +24,18 @@ func (u *UserDao) FindByCredential(ctx context.Context, credential string) (*mod
 	return &user, nil
 }
 
+func (u *UserDao) GetByID(ctx context.Context, userID int64) (*model.User, error) {
+	row := u.store.Client.QueryRowContext(ctx, `SELECT id, username, password, email, nickname, token, created_at, updated_at FROM user WHERE id = ? LIMIT 1`, userID)
+	var user model.User
+	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Nickname, &user.Token, &user.CreatedAt, &user.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
 func (u *UserDao) GetByToken(ctx context.Context, token string) (*model.User, error) {
 	row := u.store.Client.QueryRowContext(ctx, `SELECT id, username, password, email, nickname, token, created_at, updated_at FROM user WHERE token = ? LIMIT 1`, token)
 	var user model.User

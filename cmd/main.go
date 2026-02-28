@@ -16,6 +16,7 @@ import (
 	"linkit/internal/db"
 	"linkit/internal/middleware"
 	"linkit/internal/server"
+	"linkit/internal/session"
 	"linkit/internal/storage"
 	"linkit/internal/task"
 )
@@ -57,18 +58,22 @@ func main() {
 	}
 
 	Init(cfg, storageReg)
+	sessions := session.NewManager()
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+	defer cleanupCancel()
+	sessions.StartCleanup(cleanupCtx, 24*time.Hour)
 
 	r := gin.New()
 	// r.Use(middleware.CORS(cfg.FrontendOrigin))
 	r.Use(middleware.RequestLogger(logger))
 	r.Use(gin.Recovery())
-	r.Use(middleware.AuthOptional(store, cfg))
+	r.Use(middleware.AuthOptional(store, cfg, sessions))
 
 	r.GET("/r/:code", server.DownloadHandler(store, storageReg))
 
 	api := r.Group("/api")
 	{
-		api.POST("/login", server.LoginHandler(store, cfg))
+		api.POST("/login", server.LoginHandler(store, cfg, sessions))
 		api.GET("/share/:code", server.ShareInfoHandler(store))
 		api.GET("/upload", server.UploadQueryHandler(&cfg))
 		api.POST("/upload", server.UploadHandler(store, &cfg, storageReg))
@@ -76,8 +81,8 @@ func main() {
 		apiAuth := api.Group("")
 		apiAuth.Use(middleware.AuthRequired(store, cfg))
 		apiAuth.GET("/me", server.MeHandler())
-		apiAuth.POST("/refresh", server.RefreshHandler(store, cfg))
-		apiAuth.POST("/logout", server.LogoutHandler(store, cfg))
+		apiAuth.POST("/refresh", server.RefreshHandler(store, cfg, sessions))
+		apiAuth.POST("/logout", server.LogoutHandler(store, cfg, sessions))
 
 		apiAuth.GET("/gallery", server.GalleryHandler(store))
 		apiAuth.POST("/gallery/delete", server.GalleryDeleteHandler(store, storageReg))
@@ -88,7 +93,7 @@ func main() {
 		apiAdmin.GET("/stats", server.AdminDashboardStatsHandler(store))
 		apiAdmin.GET("/config", server.AdminGetConfigHandler(store, &cfg))
 		apiAdmin.POST("/config", server.AdminUpsertConfigHandler(store, &cfg, storageReg))
-		apiAdmin.POST("/password", server.AdminChangePasswordHandler(store, cfg))
+		apiAdmin.POST("/password", server.AdminChangePasswordHandler(store, cfg, sessions))
 	}
 
 	// 静态资源

@@ -12,6 +12,7 @@ import (
 	"linkit/internal/config"
 	"linkit/internal/db"
 	"linkit/internal/db/model"
+	"linkit/internal/session"
 	"linkit/internal/storage"
 )
 
@@ -150,7 +151,7 @@ type adminChangePasswordRequest struct {
 	NewPassword2 string `json:"newPassword2"`
 }
 
-func AdminChangePasswordHandler(store *db.DB, cfg config.Config) gin.HandlerFunc {
+func AdminChangePasswordHandler(store *db.DB, cfg config.Config, sessions *session.Manager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req adminChangePasswordRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -193,17 +194,11 @@ func AdminChangePasswordHandler(store *db.DB, cfg config.Config) gin.HandlerFunc
 			return
 		}
 
-		// 刷新 token，避免旧会话继续复用
-		token, err := generateSessionToken()
-		if err != nil {
+		// 刷新登录态，延长会话有效期，并轮换会话 ID。
+		if err := issueSession(c, cfg, sessions, u.ID); err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("修改失败", 500))
 			return
 		}
-		if err := store.User.UpdateToken(ctx, u.ID, &token); err != nil {
-			c.JSON(http.StatusInternalServerError, Fail[any]("修改失败", 500))
-			return
-		}
-		setSessionCookie(c, cfg, token)
 
 		c.JSON(http.StatusOK, Ok(gin.H{"success": true}, "修改成功"))
 	}
