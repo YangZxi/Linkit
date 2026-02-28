@@ -96,6 +96,24 @@ LIMIT 1;
 	return &res, nil
 }
 
+func (r *ResourceDao) FindLatestByUser(ctx context.Context, userID int64) (*model.Resource, error) {
+	row := r.store.Client.QueryRowContext(ctx, `
+SELECT id, filename, hash, type, path, file_size, user_id, created_at
+FROM resource
+WHERE user_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+`, userID)
+	var res model.Resource
+	if err := row.Scan(&res.ID, &res.Filename, &res.Hash, &res.Type, &res.Path, &res.FileSize, &res.UserID, &res.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &res, nil
+}
+
 func (r *ResourceDao) DeleteWithShare(ctx context.Context, resourceID, userID int64) (bool, error) {
 	tx, err := r.store.Client.BeginTx(ctx, nil)
 	if err != nil {
