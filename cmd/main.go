@@ -64,7 +64,8 @@ func main() {
 	sessions.StartCleanup(cleanupCtx, 24*time.Hour)
 
 	r := gin.New()
-	// r.Use(middleware.CORS(cfg.FrontendOrigin))
+	corsManager := middleware.NewCORSManager(&cfg, "")
+	r.Use(middleware.CORSMiddleware(corsManager))
 	r.Use(middleware.RequestLogger(logger))
 	r.Use(gin.Recovery())
 	r.Use(middleware.AuthOptional(store, cfg, sessions))
@@ -94,7 +95,7 @@ func main() {
 		apiAdmin.Use(middleware.AdminRequired(cfg))
 		apiAdmin.GET("/stats", server.AdminDashboardStatsHandler(store))
 		apiAdmin.GET("/config", server.AdminGetConfigHandler(store, &cfg))
-		apiAdmin.POST("/config", server.AdminUpsertConfigHandler(store, &cfg, storageReg))
+		apiAdmin.POST("/config", server.AdminUpsertConfigHandler(store, &cfg, storageReg, buildConfigReloader(storageReg, corsManager)))
 		apiAdmin.POST("/password", server.AdminChangePasswordHandler(store, cfg, sessions))
 	}
 
@@ -137,4 +138,18 @@ func main() {
 func Init(cfg config.Config, storageReg *storage.Registry) {
 	// 启动 S3 备份任务
 	task.StartS3DBBackup(cfg, storageReg)
+}
+
+func buildConfigReloader(reg *storage.Registry, corsManager *middleware.CORSManager) func(*config.Config) error {
+	return func(cfg *config.Config) error {
+		if reg != nil {
+			if err := reg.Reload(*cfg); err != nil {
+				return err
+			}
+		}
+		if corsManager != nil {
+			corsManager.UpdateFromConfig(cfg)
+		}
+		return nil
+	}
 }

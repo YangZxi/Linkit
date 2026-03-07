@@ -23,6 +23,7 @@ type AppConfig struct {
 	GuestUploadEnable       bool   `config:"GUEST_UPLOAD_ENABLE"`
 	GuestUploadExtWhitelist string `config:"GUEST_UPLOAD_EXT_WHITELIST"`
 	GuestUploadMaxMbSize    int    `config:"GUEST_UPLOAD_MAX_MB_SIZE"`
+	CorsAllowedList         string `config:"CORS_ALLOWED_LIST"`
 }
 
 type Config struct {

@@ -63,7 +63,7 @@ func AdminGetConfigHandler(store *db.DB, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func AdminUpsertConfigHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.HandlerFunc {
+func AdminUpsertConfigHandler(store *db.DB, cfg *config.Config, reg *storage.Registry, reloadFn func(*config.Config) error) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req adminUpsertConfigPayload
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -117,9 +117,11 @@ func AdminUpsertConfigHandler(store *db.DB, cfg *config.Config, reg *storage.Reg
 				return
 			}
 		}
-		if err := reg.Reload(*cfg); err != nil {
-			c.JSON(http.StatusInternalServerError, Fail[any]("保存成功但热更新失败，请检查配置后重试", 500))
-			return
+		if reloadFn != nil {
+			if err := reloadFn(cfg); err != nil {
+				c.JSON(http.StatusInternalServerError, Fail[any]("保存成功但热更新失败，请检查配置后重试", 500))
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, Ok(gin.H{"success": true}, "保存成功"))

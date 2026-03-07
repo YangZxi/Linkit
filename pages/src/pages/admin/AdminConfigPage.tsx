@@ -24,6 +24,7 @@ type ConfigValues = {
   GUEST_UPLOAD_ENABLE?: string;
   GUEST_UPLOAD_EXT_WHITELIST?: string;
   GUEST_UPLOAD_MAX_MB_SIZE?: string;
+  CORS_ALLOWED_LIST?: string;
 };
 
 type ConfigSource = {
@@ -52,6 +53,7 @@ const defaultValues: ConfigValues = {
   GUEST_UPLOAD_ENABLE: undefined,
   GUEST_UPLOAD_EXT_WHITELIST: undefined,
   GUEST_UPLOAD_MAX_MB_SIZE: undefined,
+  CORS_ALLOWED_LIST: undefined,
 };
 
 export default function AdminConfigPage() {
@@ -253,6 +255,12 @@ export default function AdminConfigPage() {
                 type="number"
                 value={values.GUEST_UPLOAD_MAX_MB_SIZE ?? ""}
                 onValueChange={(value) => setValues((prev) => ({ ...prev, GUEST_UPLOAD_MAX_MB_SIZE: value }))}
+              />
+              <Input
+                label={`CORS 白名单(逗号分隔) / ${sourceHint("CORS_ALLOWED_LIST")}`}
+                placeholder={"https://example.com,https://*.example.com"}
+                value={values.CORS_ALLOWED_LIST ?? ""}
+                onValueChange={(value) => setValues((prev) => ({ ...prev, CORS_ALLOWED_LIST: value }))}
               />
             </div>            
           )}
