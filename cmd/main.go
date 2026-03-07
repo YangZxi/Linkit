@@ -85,7 +85,8 @@ func main() {
 		apiAuth.POST("/logout", server.LogoutHandler(store, cfg, sessions))
 
 		apiAuth.GET("/gallery", server.GalleryHandler(store))
-		apiAuth.GET("/gallery/first", server.GalleryFirstHandler(store, storageReg))
+		apiAuth.GET("/gallery/pick", server.GalleryPickHandler(store, storageReg))
+		apiAuth.POST("/gallery/pick", server.GalleryPickUpdateHandler(store))
 		apiAuth.POST("/gallery/delete", server.GalleryDeleteHandler(store, storageReg))
 		apiAuth.POST("/share", server.CreateShareHandler(store))
 

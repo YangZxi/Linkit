@@ -43,6 +43,7 @@ type UserResourceWithShare struct {
 	Storage   string    `json:"storage"`
 	CreatedAt time.Time `json:"createdAt"`
 	ShareCode *string   `json:"shareCode"`
+	Tags      []string  `json:"tags"`
 }
 
 type ShareResource struct {

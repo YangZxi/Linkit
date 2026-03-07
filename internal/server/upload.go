@@ -109,6 +109,11 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 		chunkIndexPtr := parseOptionalInt64(firstValue(form.Value["chunkIndex"], ""))
 		totalChunksPtr := parseOptionalInt64(firstValue(form.Value["totalChunks"], ""))
 		chunkSizePtr := parseOptionalInt64(firstValue(form.Value["chunkSize"], ""))
+		tags, err := db.ParseTagsFromStrings(form.Value["tags"])
+		if err != nil {
+			c.JSON(http.StatusBadRequest, Fail[any](err.Error(), 400))
+			return
+		}
 
 		// 访客上传按白名单限制
 		if user.ID == db.GuestUserID {
@@ -149,7 +154,7 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 				c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
 				return
 			}
-			resID, share, err := persistResource(c, store, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID})
+			resID, share, err := persistResource(c, store, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID}, tags)
 			if err != nil {
 				slog.Error("写入数据库失败", "err", err)
 				c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
@@ -225,7 +230,7 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 					c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
 					return
 				}
-				resID, share, err := persistResource(c, store, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID})
+				resID, share, err := persistResource(c, store, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID}, tags)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, Fail[any]("记录失败", 500))
 					return
@@ -439,11 +444,14 @@ func (p *guestUploadPolicy) allow(fileName string, fileSize int64) (bool, string
 	return true, ""
 }
 
-func persistResource(c *gin.Context, store *db.DB, res model.Resource) (int64, string, error) {
+func persistResource(c *gin.Context, store *db.DB, res model.Resource, tags []string) (int64, string, error) {
 	ctx, cancel := store.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 	resID, err := store.Resource.Insert(ctx, res)
 	if err != nil {
+		return 0, "", err
+	}
+	if err := store.Resource.ReplaceTags(ctx, resID, tags); err != nil {
 		return 0, "", err
 	}
 	share, err := store.Share.CreateShareCode(ctx, resID, res.UserID, nil, nil, false)

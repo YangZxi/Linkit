@@ -58,6 +58,18 @@ CREATE TABLE IF NOT EXISTS "resource" (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
+	createResourceTagTable = `
+CREATE TABLE IF NOT EXISTS "resource_tag" (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  resource_id INTEGER NOT NULL,
+  tag TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(resource_id, tag COLLATE NOCASE)
+);
+`
+	createResourceTagIndex = `
+CREATE INDEX IF NOT EXISTS "idx_resource_tag_tag" ON "resource_tag"(tag COLLATE NOCASE);
+`
 	createShareTable = `
 CREATE TABLE IF NOT EXISTS "share" (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +104,7 @@ func NewStore(cfg config.Config, logger *slog.Logger, init bool) (*DB, error) {
 		return nil, err
 	}
 	store := &DB{Client: db, Logger: logger, Cfg: cfg}
-	store.Resource = &ResourceDao{store: store}
+	store.Resource = NewResourceDao(store)
 	store.User = &UserDao{store: store}
 	store.AppConfig = &AppConfigDao{store: store}
 	store.Share = &ShareDao{store: store}
@@ -131,7 +143,14 @@ func (s *DB) Close() error {
 }
 
 func (s *DB) upgradeSchema(ctx context.Context) error {
-	stmts := []string{createUserTable, createAppConfigTable, createResourceTable, createShareTable}
+	stmts := []string{
+		createUserTable,
+		createAppConfigTable,
+		createResourceTable,
+		createResourceTagTable,
+		createShareTable,
+		createResourceTagIndex,
+	}
 	for _, stmt := range stmts {
 		if _, err := s.Client.ExecContext(ctx, stmt); err != nil {
 			return err
