@@ -28,7 +28,7 @@ func AuthOptional(store *db.DB, cfg config.Config, sessions *session.Manager) gi
 }
 
 func resolveUser(c *gin.Context, store *db.DB, cfg config.Config, sessions *session.Manager) (*model.User, error) {
-	if token, ok := tokenFromAuthorization(c.GetHeader("Authorization")); ok {
+	if token, ok := tokenFromRequest(c); ok {
 		if token == "" {
 			return nil, nil
 		}
@@ -43,6 +43,17 @@ func resolveUser(c *gin.Context, store *db.DB, cfg config.Config, sessions *sess
 		return nil, nil
 	}
 	return store.User.GetByID(c.Request.Context(), userID)
+}
+
+func tokenFromRequest(c *gin.Context) (string, bool) {
+	if token, ok := tokenFromAuthorization(c.GetHeader("Authorization")); ok {
+		return token, true
+	}
+	token := strings.TrimSpace(c.Query("token"))
+	if token == "" {
+		return "", false
+	}
+	return token, true
 }
 
 func tokenFromAuthorization(raw string) (string, bool) {
