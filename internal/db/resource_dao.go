@@ -299,7 +299,7 @@ func (r *ResourceDao) GetUserPickResourceID(ctx context.Context, userID int64) (
 	return resourceID, ok, nil
 }
 
-func (r *ResourceDao) SetUserPickResourceID(ctx context.Context, userID, resourceID int64) error {
+func (r *ResourceDao) SetUserPickResourceID(userID, resourceID int64) error {
 	r.pickMu.Lock()
 	defer r.pickMu.Unlock()
 	if r.picks == nil {

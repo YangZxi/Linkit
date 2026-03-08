@@ -50,16 +50,8 @@ type galleryDeleteRequest struct {
 	ID int64 `json:"id"`
 }
 
-type galleryDeleteResponse struct {
-	Success bool `json:"success"`
-}
-
 type galleryPickUpdateRequest struct {
 	ResourceID int64 `json:"resourceId"`
-}
-
-type galleryPickUpdateResponse struct {
-	Success bool `json:"success"`
 }
 
 func GalleryDeleteHandler(store *db.DB, reg *storage.Registry) gin.HandlerFunc {
@@ -103,7 +95,7 @@ func GalleryDeleteHandler(store *db.DB, reg *storage.Registry) gin.HandlerFunc {
 			store.Logger.Warn("清理 pick 记录失败", "user", user.Username, "resource_id", resource.ID, "error", err)
 		}
 		store.Logger.Info("删除资源完成", "user", user.Username, "resource_id", resource.ID, "file", resource.Filename)
-		c.JSON(http.StatusOK, Ok(galleryDeleteResponse{Success: true}, "ok"))
+		c.JSON(http.StatusOK, Ok(*new(any), "ok"))
 	}
 }
 
@@ -202,10 +194,10 @@ func GalleryPickUpdateHandler(store *db.DB) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, Fail[any]("资源不存在", 404))
 			return
 		}
-		if err := store.Resource.SetUserPickResourceID(ctx, user.ID, resource.ID); err != nil {
+		if err := store.Resource.SetUserPickResourceID(user.ID, resource.ID); err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("保存失败", 500))
 			return
 		}
-		c.JSON(http.StatusOK, Ok(galleryPickUpdateResponse{Success: true}, "ok"))
+		c.JSON(http.StatusOK, Ok(*new(any), "ok"))
 	}
 }

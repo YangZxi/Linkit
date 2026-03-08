@@ -21,6 +21,7 @@ import (
 	"linkit/internal/db"
 	"linkit/internal/db/model"
 	"linkit/internal/storage"
+	"linkit/internal/utli"
 )
 
 const (
@@ -103,12 +104,13 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 		}
 		fh := files[0]
 
-		uploadID := firstValue(form.Value["uploadId"], fmt.Sprintf("%d-%s", time.Now().UnixMilli(), fh.Filename))
-		fileName := filepath.Base(firstValue(form.Value["filename"], fh.Filename))
-		fileSize := parseInt64(firstValue(form.Value["filesize"], fmt.Sprintf("%d", fh.Size)), fh.Size)
-		chunkIndexPtr := parseOptionalInt64(firstValue(form.Value["chunkIndex"], ""))
-		totalChunksPtr := parseOptionalInt64(firstValue(form.Value["totalChunks"], ""))
-		chunkSizePtr := parseOptionalInt64(firstValue(form.Value["chunkSize"], ""))
+		uploadID := utli.FirstValue(form.Value["uploadId"], fmt.Sprintf("%d-%s", time.Now().UnixMilli(), fh.Filename))
+		fileName := filepath.Base(utli.FirstValue(form.Value["filename"], fh.Filename))
+		fileSize := utli.ParseInt64(utli.FirstValue(form.Value["filesize"], fmt.Sprintf("%d", fh.Size)), fh.Size)
+		chunkIndexPtr := utli.ParseOptionalInt64(utli.FirstValue(form.Value["chunkIndex"], ""))
+		totalChunksPtr := utli.ParseOptionalInt64(utli.FirstValue(form.Value["totalChunks"], ""))
+		chunkSizePtr := utli.ParseOptionalInt64(utli.FirstValue(form.Value["chunkSize"], ""))
+		pickIt := utli.ParseOptionalBool(utli.FirstValue(form.Value["pickIt"], ""))
 		tags, err := db.ParseTagsFromStrings(form.Value["tags"])
 		if err != nil {
 			c.JSON(http.StatusBadRequest, Fail[any](err.Error(), 400))
@@ -158,6 +160,10 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 			if err != nil {
 				slog.Error("写入数据库失败", "err", err)
 				c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
+				return
+			}
+			if err := setUploadPickResource(store, user, resID, pickIt); err != nil {
+				c.JSON(http.StatusInternalServerError, Fail[any]("设置 pick 资源失败", 500))
 				return
 			}
 			reg.Logger.Info("文件上传完成", "user", user.Username, "file", fileName, "resource_id", resID, "share", share)
@@ -235,6 +241,10 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 					c.JSON(http.StatusInternalServerError, Fail[any]("记录失败", 500))
 					return
 				}
+				if err := setUploadPickResource(store, user, resID, pickIt); err != nil {
+					c.JSON(http.StatusInternalServerError, Fail[any]("设置 pick 资源失败", 500))
+					return
+				}
 				reg.Logger.Info("分片上传完成", "user", user.Username, "file", fileName, "resource_id", resID, "share", share)
 				_ = os.Remove(mergedPath)
 				_ = os.RemoveAll(chunkFolder)
@@ -244,6 +254,13 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 		}
 		c.JSON(http.StatusOK, Ok(uploadResponse{Merged: false, UploadID: uploadID, Filename: fileName, ChunkIndex: chunkIndexPtr, TotalChunks: totalChunksPtr, ChunkSize: chunkSizePtr}, "ok"))
 	}
+}
+
+func setUploadPickResource(store *db.DB, user *model.User, resourceID int64, pickIt bool) error {
+	if !pickIt || user == nil || user.ID == db.GuestUserID {
+		return nil
+	}
+	return store.Resource.SetUserPickResourceID(user.ID, resourceID)
 }
 
 func ensureDir(dir string) error {
@@ -346,30 +363,6 @@ func mergeChunks(folder string, total int64, target string) error {
 			return err
 		}
 		r.Close()
-	}
-	return nil
-}
-
-func firstValue(values []string, fallback string) string {
-	if len(values) > 0 && values[0] != "" {
-		return values[0]
-	}
-	return fallback
-}
-
-func parseInt64(value string, fallback int64) int64 {
-	if n, err := strconv.ParseInt(value, 10, 64); err == nil {
-		return n
-	}
-	return fallback
-}
-
-func parseOptionalInt64(value string) *int64 {
-	if value == "" {
-		return nil
-	}
-	if n, err := strconv.ParseInt(value, 10, 64); err == nil {
-		return &n
 	}
 	return nil
 }
