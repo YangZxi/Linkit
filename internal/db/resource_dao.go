@@ -92,7 +92,18 @@ func (r *ResourceDao) Insert(ctx context.Context, resource model.Resource) (int6
 	return res.LastInsertId()
 }
 
-func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size int, tagFilter string) ([]model.UserResourceWithShare, int64, error) {
+func buildInClausePlaceholders(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	holders := make([]string, count)
+	for i := range holders {
+		holders[i] = "?"
+	}
+	return strings.Join(holders, ",")
+}
+
+func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size int, tagFilters []string) ([]model.UserResourceWithShare, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -104,7 +115,8 @@ func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size i
 	}
 	offset := (page - 1) * size
 
-	tagFilter = strings.TrimSpace(strings.ToLower(tagFilter))
+	hasTagFilter := len(tagFilters) > 0
+	tagPlaceholders := buildInClausePlaceholders(len(tagFilters))
 
 	queryBuilder := strings.Builder{}
 	queryBuilder.WriteString(`
@@ -126,12 +138,14 @@ LEFT JOIN (
 ) tag_agg ON tag_agg.resource_id = r.id
 WHERE r.user_id = ?`)
 	args := []any{userID}
-	if tagFilter != "" {
+	if hasTagFilter {
 		queryBuilder.WriteString(`
   AND EXISTS (
-    SELECT 1 FROM resource_tag rt WHERE rt.resource_id = r.id AND rt.tag = ?
+    SELECT 1 FROM resource_tag rt WHERE rt.resource_id = r.id AND rt.tag IN (` + tagPlaceholders + `)
   )`)
-		args = append(args, tagFilter)
+		for _, tag := range tagFilters {
+			args = append(args, tag)
+		}
 	}
 	queryBuilder.WriteString(`
 ORDER BY r.created_at DESC
@@ -163,17 +177,46 @@ LIMIT ? OFFSET ?;`)
 	countBuilder := strings.Builder{}
 	countBuilder.WriteString(`SELECT COUNT(1) FROM resource r WHERE r.user_id = ?`)
 	countArgs := []any{userID}
-	if tagFilter != "" {
+	if hasTagFilter {
 		countBuilder.WriteString(`
   AND EXISTS (
-    SELECT 1 FROM resource_tag rt WHERE rt.resource_id = r.id AND rt.tag = ?
+    SELECT 1 FROM resource_tag rt WHERE rt.resource_id = r.id AND rt.tag IN (` + tagPlaceholders + `)
   )`)
-		countArgs = append(countArgs, tagFilter)
+		for _, tag := range tagFilters {
+			countArgs = append(countArgs, tag)
+		}
 	}
 	if err := r.store.Client.QueryRowContext(ctx, countBuilder.String(), countArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	return items, total, nil
+}
+
+func (r *ResourceDao) ListTagsByUser(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := r.store.Client.QueryContext(ctx, `
+SELECT DISTINCT rt.tag
+FROM resource_tag rt
+INNER JOIN resource r ON r.id = rt.resource_id
+WHERE r.user_id = ?
+ORDER BY rt.tag COLLATE NOCASE ASC;
+`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tags := make([]string, 0)
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tags, nil
 }
 
 func (r *ResourceDao) ReplaceTags(ctx context.Context, resourceID int64, tags []string) error {

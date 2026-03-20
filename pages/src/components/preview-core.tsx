@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Image, Spinner, Textarea } from "@heroui/react";
+import { Spinner, Textarea } from "@heroui/react";
 import clsx from "clsx";
 
 import { MediaType } from "@/lib/file";
@@ -257,19 +257,22 @@ function VideoPreview({
 
 function ImagePreview({
   className,
-  style,
   rawUrl,
   filename,
-}: Pick<PreviewCoreProps, "className" | "style" | "rawUrl" | "filename">) {
+}: Pick<PreviewCoreProps, "className" | "rawUrl" | "filename">) {
   return (
-    <Image
-      alt={filename}
-      classNames={{
-        wrapper: `${className} max-h-[460px]`,
-        img: "object-contain"
-      }}
-      src={rawUrl}
-    />
+    <div
+      className={clsx(
+        "flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-default-200/70 bg-default-50/60 p-4 shadow-lg dark:border-default-100/20 dark:bg-default-50/10",
+        className,
+      )}
+    >
+      <img
+        alt={filename}
+        className="block max-h-full max-w-full object-contain"
+        src={rawUrl}
+      />
+    </div>
   );
 }
 
@@ -295,7 +298,11 @@ function PreviewCore({
 }: PreviewCoreProps) {
   if (type === "image") {
     return (
-      <ImagePreview className={className} filename={filename} rawUrl={rawUrl} />
+      <ImagePreview
+        className={className}
+        filename={filename}
+        rawUrl={rawUrl}
+      />
     );
   }
 

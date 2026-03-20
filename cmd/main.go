@@ -86,6 +86,7 @@ func main() {
 		apiAuth.POST("/logout", server.LogoutHandler(store, cfg, sessions))
 
 		apiAuth.GET("/gallery", server.GalleryHandler(store))
+		apiAuth.GET("/gallery/tags", server.GalleryTagsHandler(store))
 		apiAuth.GET("/gallery/pick", server.GalleryPickHandler(store, storageReg))
 		apiAuth.POST("/gallery/pick", server.GalleryPickUpdateHandler(store))
 		apiAuth.POST("/gallery/delete", server.GalleryDeleteHandler(store, storageReg))

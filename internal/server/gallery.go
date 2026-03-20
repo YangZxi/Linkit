@@ -29,20 +29,39 @@ func GalleryHandler(store *db.DB) gin.HandlerFunc {
 		}
 		page := parsePositiveInt(c.Query("page"), 1)
 		size := parsePositiveInt(c.Query("size"), 10)
-		tag, err := db.NormalizeTag(c.Query("tag"))
+		tags, err := db.ParseTagsFromStrings([]string{c.Query("tags")})
 		if err != nil {
 			c.JSON(http.StatusBadRequest, Fail[any](err.Error(), 400))
 			return
 		}
 		ctx, cancel := store.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
-		items, total, err := store.Resource.ListByUser(ctx, user.ID, page, size, tag)
+		items, total, err := store.Resource.ListByUser(ctx, user.ID, page, size, tags)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("获取资源失败", 500))
 			return
 		}
-		store.Logger.Debug("获取资源列表", "user", user.Username, "page", page, "size", size, "tag", tag, "total", total)
+		store.Logger.Debug("获取资源列表", "user", user.Username, "page", page, "size", size, "tags", tags, "total", total)
 		c.JSON(http.StatusOK, Ok(gin.H{"data": items, "total": total, "page": page}, "ok"))
+	}
+}
+
+func GalleryTagsHandler(store *db.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := middlewareGetUser(c)
+		if user == nil {
+			c.JSON(http.StatusUnauthorized, Fail[any]("未登录", 401))
+			return
+		}
+
+		ctx, cancel := store.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
+		tags, err := store.Resource.ListTagsByUser(ctx, user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, Fail[any]("获取标签失败", 500))
+			return
+		}
+		c.JSON(http.StatusOK, Ok(gin.H{"tags": tags}, "ok"))
 	}
 }
 

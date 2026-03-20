@@ -34,12 +34,17 @@ export type GalleryItem = {
   storage: "local" | "s3";
   createdAt: string;
   shareCode: string | null;
+  tags: string[];
 };
 
 export type GalleryResponse = {
   data: GalleryItem[];
   total: number;
   page: number;
+};
+
+export type GalleryTagsResponse = {
+  tags: string[];
 };
 
 export type GalleryDeleteResponse = {

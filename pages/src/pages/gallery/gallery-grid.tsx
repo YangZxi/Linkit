@@ -2,6 +2,7 @@ import type {
   GalleryDeleteResponse,
   GalleryItem,
   GalleryResponse,
+  GalleryTagsResponse,
   CreateShareResponse,
 } from "@/types/api";
 
@@ -19,6 +20,7 @@ import {
   Alert,
   NumberInput,
   Switch,
+  CheckboxGroup,
 } from "@heroui/react";
 import clsx from "clsx";
 
@@ -29,6 +31,7 @@ import api, { ApiResponse } from "@/lib/api";
 import { inferMediaType } from "@/lib/file";
 import { copyText } from "@/lib/utils";
 import XModal from "@/components/modal";
+import BillCheckbox from "@/components/bill-checkbox";
 
 const PAGE_SIZE = 10;
 const SHARE_PASSWORD_MIN = 4;
@@ -80,6 +83,8 @@ function buidlPwd(length: number = 4): string {
 }
 
 export default function GalleryGrid() {
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [tagSelected, setTagSelected] = useState<string[]>([]);
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -92,7 +97,8 @@ export default function GalleryGrid() {
   const [sharePassword, setSharePassword] = useState("");
   const [shareDuration, setShareDuration] = useState<number>(0);
   const [shareExpireTime, setShareExpireTime] = useState<string | null>(null);
-  const [shareDurationUnit, setShareDurationUnit] = useState<ShareDurationUnit>("days");
+  const [shareDurationUnit, setShareDurationUnit] =
+    useState<ShareDurationUnit>("days");
   const [shareRelay, setShareRelay] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
@@ -126,15 +132,34 @@ export default function GalleryGrid() {
     return Math.max(1, Math.ceil(total / PAGE_SIZE));
   }, [total]);
 
+  const fetchTags = useCallback(async () => {
+    try {
+      const res = await api.get<GalleryTagsResponse>("/gallery/tags", {
+        hideToast: true,
+      });
+      setAvailableTags(res.tags);
+    } catch (err) {
+      console.log(err);
+      setAvailableTags([]);
+    }
+  }, []);
+
   const fetchData = useCallback(
-    async (targetPage: number) => {
+    async (targetPage: number, selectedTags: string[] = tagSelected) => {
       const nextPage = Math.max(1, targetPage);
+      const params = new URLSearchParams({
+        page: String(nextPage),
+        size: String(PAGE_SIZE),
+      });
+      if (selectedTags.length > 0) {
+        params.set("tags", selectedTags.join(","));
+      }
 
       setLoading(true);
       setError(null);
       try {
         const res = await api.get<GalleryResponse>(
-          `/gallery?page=${nextPage}&size=${PAGE_SIZE}`,
+          `/gallery?${params.toString()}`,
         );
         const maxPage =
           res.total > 0 ? Math.max(1, Math.ceil(res.total / PAGE_SIZE)) : 1;
@@ -146,7 +171,7 @@ export default function GalleryGrid() {
         setItems(res.data);
         setTotal(res.total);
       } catch (err) {
-        console.log(err)
+        console.log(err);
         const message = (err as ApiResponse<unknown>).msg;
         setError(message);
         setItems([]);
@@ -155,12 +180,21 @@ export default function GalleryGrid() {
         setLoading(false);
       }
     },
-    [page],
+    [page, tagSelected],
   );
 
   useEffect(() => {
-    fetchData(page);
-  }, [fetchData, page]);
+    fetchTags();
+  }, [fetchTags]);
+
+  useEffect(() => {
+    fetchData(page, tagSelected);
+  }, [fetchData, page, tagSelected]);
+
+  const handleTagChange = useCallback((values: string[]) => {
+    setTagSelected(values);
+    setPage(1);
+  }, []);
 
   const handleCopy = useCallback(async (url: string) => {
     if (!url) return;
@@ -358,15 +392,32 @@ export default function GalleryGrid() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div />
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div>
+          <CheckboxGroup
+            className="gap-1"
+            label=""
+            orientation="horizontal"
+            value={tagSelected}
+            onChange={(values) => handleTagChange([...values])}
+          >
+            {availableTags.map((tag) => (
+              <BillCheckbox key={tag} value={tag}>
+                {tag}
+              </BillCheckbox>
+            ))}
+          </CheckboxGroup>
+        </div>
         <div className="flex items-center gap-3 text-sm text-default-500">
           <Button
             isLoading={loading}
             color="primary"
             size="sm"
             variant="flat"
-            onPress={() => fetchData(page)}
+            onPress={() => {
+              fetchTags();
+              fetchData(page, tagSelected);
+            }}
           >
             刷新
           </Button>
@@ -379,7 +430,10 @@ export default function GalleryGrid() {
             color="primary"
             size="sm"
             variant="flat"
-            onPress={() => fetchData(page)}
+            onPress={() => {
+              fetchTags();
+              fetchData(page, tagSelected);
+            }}
           >
             刷新
           </Button>
