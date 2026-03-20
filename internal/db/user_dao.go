@@ -2,9 +2,8 @@ package db
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 
+	"gorm.io/gorm"
 	"linkit/internal/db/model"
 )
 
@@ -13,10 +12,12 @@ type UserDao struct {
 }
 
 func (u *UserDao) FindByCredential(ctx context.Context, credential string) (*model.User, error) {
-	row := u.store.Client.QueryRowContext(ctx, `SELECT id, username, password, email, nickname, token, created_at, updated_at FROM user WHERE username = ? OR email = ? OR nickname = ? LIMIT 1`, credential, credential, credential)
 	var user model.User
-	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Nickname, &user.Token, &user.CreatedAt, &user.UpdatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	err := u.store.Client.WithContext(ctx).
+		Where("username = ? OR email = ? OR nickname = ?", credential, credential, credential).
+		First(&user).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
 		return nil, err
@@ -25,10 +26,10 @@ func (u *UserDao) FindByCredential(ctx context.Context, credential string) (*mod
 }
 
 func (u *UserDao) GetByID(ctx context.Context, userID int64) (*model.User, error) {
-	row := u.store.Client.QueryRowContext(ctx, `SELECT id, username, password, email, nickname, token, created_at, updated_at FROM user WHERE id = ? LIMIT 1`, userID)
 	var user model.User
-	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Nickname, &user.Token, &user.CreatedAt, &user.UpdatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	err := u.store.Client.WithContext(ctx).Where("id = ?", userID).First(&user).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
 		return nil, err
@@ -37,10 +38,10 @@ func (u *UserDao) GetByID(ctx context.Context, userID int64) (*model.User, error
 }
 
 func (u *UserDao) GetByToken(ctx context.Context, token string) (*model.User, error) {
-	row := u.store.Client.QueryRowContext(ctx, `SELECT id, username, password, email, nickname, token, created_at, updated_at FROM user WHERE token = ? LIMIT 1`, token)
 	var user model.User
-	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Nickname, &user.Token, &user.CreatedAt, &user.UpdatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	err := u.store.Client.WithContext(ctx).Where("token = ?", token).First(&user).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
 		return nil, err
@@ -49,11 +50,13 @@ func (u *UserDao) GetByToken(ctx context.Context, token string) (*model.User, er
 }
 
 func (u *UserDao) UpdateToken(ctx context.Context, userID int64, token *string) error {
-	_, err := u.store.Client.ExecContext(ctx, `UPDATE user SET token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, token, userID)
-	return err
+	return u.store.Client.WithContext(ctx).Model(&model.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"token": token,
+	}).Error
 }
 
 func (u *UserDao) UpdatePassword(ctx context.Context, userID int64, newHash string) error {
-	_, err := u.store.Client.ExecContext(ctx, `UPDATE user SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, newHash, userID)
-	return err
+	return u.store.Client.WithContext(ctx).Model(&model.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"password": newHash,
+	}).Error
 }

@@ -2,13 +2,13 @@ package db
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
 	"linkit/internal/db/model"
 )
 
@@ -85,22 +85,10 @@ func NewResourceDao(store *DB) *ResourceDao {
 }
 
 func (r *ResourceDao) Insert(ctx context.Context, resource model.Resource) (int64, error) {
-	res, err := r.store.Client.ExecContext(ctx, `INSERT INTO resource(filename, hash, type, path, file_size, user_id) VALUES(?,?,?,?,?,?)`, resource.Filename, resource.Hash, resource.Type, resource.Path, resource.FileSize, resource.UserID)
-	if err != nil {
+	if err := r.store.Client.WithContext(ctx).Create(&resource).Error; err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
-}
-
-func buildInClausePlaceholders(count int) string {
-	if count <= 0 {
-		return ""
-	}
-	holders := make([]string, count)
-	for i := range holders {
-		holders[i] = "?"
-	}
-	return strings.Join(holders, ",")
+	return resource.ID, nil
 }
 
 func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size int, tagFilters []string) ([]model.UserResourceWithShare, int64, error) {
@@ -115,166 +103,148 @@ func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size i
 	}
 	offset := (page - 1) * size
 
-	hasTagFilter := len(tagFilters) > 0
-	tagPlaceholders := buildInClausePlaceholders(len(tagFilters))
-
-	queryBuilder := strings.Builder{}
-	queryBuilder.WriteString(`
-SELECT r.id,
-       r.filename,
-       r.type,
-       r.created_at,
-       CASE
-         WHEN r.path LIKE 'local@/%' THEN 'local'
-         ELSE 's3'
-       END as storage,
-       (SELECT sc.code FROM share sc WHERE sc.resource_id = r.id AND (sc.password IS NULL OR sc.password = '') ORDER BY sc.created_at DESC LIMIT 1) as share_code,
-       COALESCE(tag_agg.tags, '') as tags
-FROM resource r
-LEFT JOIN (
-    SELECT resource_id, GROUP_CONCAT(tag, ',') AS tags
-    FROM resource_tag
-    GROUP BY resource_id
-) tag_agg ON tag_agg.resource_id = r.id
-WHERE r.user_id = ?`)
-	args := []any{userID}
-	if hasTagFilter {
-		queryBuilder.WriteString(`
-  AND EXISTS (
-    SELECT 1 FROM resource_tag rt WHERE rt.resource_id = r.id AND rt.tag IN (` + tagPlaceholders + `)
-  )`)
-		for _, tag := range tagFilters {
-			args = append(args, tag)
-		}
-	}
-	queryBuilder.WriteString(`
-ORDER BY r.created_at DESC
-LIMIT ? OFFSET ?;`)
-	args = append(args, size, offset)
-
-	rows, err := r.store.Client.QueryContext(ctx, queryBuilder.String(), args...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	items := make([]model.UserResourceWithShare, 0)
-	for rows.Next() {
-		var item model.UserResourceWithShare
-		var tags sql.NullString
-		if err := rows.Scan(&item.ID, &item.Filename, &item.Type, &item.CreatedAt, &item.Storage, &item.ShareCode, &tags); err != nil {
+	baseQuery := r.store.Client.WithContext(ctx).Model(&model.Resource{}).Where("user_id = ?", userID)
+	if len(tagFilters) > 0 {
+		resourceIDs, err := r.findResourceIDsByTags(ctx, userID, tagFilters)
+		if err != nil {
 			return nil, 0, err
 		}
-		if tags.Valid && tags.String != "" {
-			item.Tags = splitRawTags(tags.String)
-		} else {
-			item.Tags = []string{}
+		if len(resourceIDs) == 0 {
+			return []model.UserResourceWithShare{}, 0, nil
 		}
-		items = append(items, item)
+		baseQuery = baseQuery.Where("id IN ?", resourceIDs)
 	}
 
 	var total int64
-	countBuilder := strings.Builder{}
-	countBuilder.WriteString(`SELECT COUNT(1) FROM resource r WHERE r.user_id = ?`)
-	countArgs := []any{userID}
-	if hasTagFilter {
-		countBuilder.WriteString(`
-  AND EXISTS (
-    SELECT 1 FROM resource_tag rt WHERE rt.resource_id = r.id AND rt.tag IN (` + tagPlaceholders + `)
-  )`)
-		for _, tag := range tagFilters {
-			countArgs = append(countArgs, tag)
-		}
-	}
-	if err := r.store.Client.QueryRowContext(ctx, countBuilder.String(), countArgs...).Scan(&total); err != nil {
+	if err := baseQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
+	}
+
+	var resources []model.Resource
+	if err := baseQuery.Order("created_at DESC").Order("id DESC").Offset(offset).Limit(size).Find(&resources).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(resources) == 0 {
+		return []model.UserResourceWithShare{}, total, nil
+	}
+
+	resourceIDs := collectResourceIDs(resources)
+	tagMap, err := r.listTagsMapByResourceIDs(ctx, resourceIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	shareMap, err := r.listLatestShareCodeMap(ctx, resourceIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]model.UserResourceWithShare, 0, len(resources))
+	for _, resource := range resources {
+		item := model.UserResourceWithShare{
+			ID:        resource.ID,
+			Filename:  resource.Filename,
+			Type:      resource.Type,
+			Storage:   storageFromPath(resource.Path),
+			CreatedAt: resource.CreatedAt,
+			ShareCode: shareMap[resource.ID],
+			Tags:      tagMap[resource.ID],
+		}
+		if item.Tags == nil {
+			item.Tags = []string{}
+		}
+		items = append(items, item)
 	}
 	return items, total, nil
 }
 
 func (r *ResourceDao) ListTagsByUser(ctx context.Context, userID int64) ([]string, error) {
-	rows, err := r.store.Client.QueryContext(ctx, `
-SELECT DISTINCT rt.tag
-FROM resource_tag rt
-INNER JOIN resource r ON r.id = rt.resource_id
-WHERE r.user_id = ?
-ORDER BY rt.tag COLLATE NOCASE ASC;
-`, userID)
+	var resources []model.Resource
+	if err := r.store.Client.WithContext(ctx).
+		Model(&model.Resource{}).
+		Select("id").
+		Where("user_id = ?", userID).
+		Find(&resources).Error; err != nil {
+		return nil, err
+	}
+	resourceIDs := collectResourceIDs(resources)
+	if len(resourceIDs) == 0 {
+		return []string{}, nil
+	}
+	tagMap, err := r.listTagsMapByResourceIDs(ctx, resourceIDs)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	tags := make([]string, 0)
-	for rows.Next() {
-		var tag string
-		if err := rows.Scan(&tag); err != nil {
-			return nil, err
+	set := make(map[string]struct{})
+	for _, values := range tagMap {
+		for _, tag := range values {
+			set[tag] = struct{}{}
 		}
+	}
+	tags := make([]string, 0, len(set))
+	for tag := range set {
 		tags = append(tags, tag)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	sort.Slice(tags, func(i, j int) bool {
+		left := strings.ToLower(tags[i])
+		right := strings.ToLower(tags[j])
+		if left == right {
+			return tags[i] < tags[j]
+		}
+		return left < right
+	})
 	return tags, nil
 }
 
 func (r *ResourceDao) ReplaceTags(ctx context.Context, resourceID int64, tags []string) error {
-	tx, err := r.store.Client.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	needRollback := true
-	defer func() {
-		if needRollback {
-			_ = tx.Rollback()
-		}
-	}()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM resource_tag WHERE resource_id = ?`, resourceID); err != nil {
-		return err
-	}
-	if len(tags) > 0 {
-		stmt, err := tx.PrepareContext(ctx, `INSERT INTO resource_tag(resource_id, tag) VALUES(?, ?)`)
-		if err != nil {
+	return r.store.Client.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("resource_id = ?", resourceID).Delete(&model.ResourceTag{}).Error; err != nil {
 			return err
 		}
-		defer stmt.Close()
-		for _, tag := range tags {
-			if _, err := stmt.ExecContext(ctx, resourceID, tag); err != nil {
-				return err
-			}
+		if len(tags) == 0 {
+			return nil
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	needRollback = false
-	return nil
+		items := make([]model.ResourceTag, 0, len(tags))
+		for _, tag := range tags {
+			items = append(items, model.ResourceTag{
+				ResourceID: resourceID,
+				Tag:        tag,
+			})
+		}
+		return tx.Create(&items).Error
+	})
 }
 
 func (r *ResourceDao) GetDashboardStats(ctx context.Context) (int64, int64, int64, error) {
 	var totalFiles int64
-	var totalSize int64
-	if err := r.store.Client.QueryRowContext(ctx, `SELECT COUNT(1), COALESCE(SUM(file_size), 0) FROM resource`).Scan(&totalFiles, &totalSize); err != nil {
+	if err := r.store.Client.WithContext(ctx).Model(&model.Resource{}).Count(&totalFiles).Error; err != nil {
 		return 0, 0, 0, err
 	}
-	var totalViews int64
-	if err := r.store.Client.QueryRowContext(ctx, `SELECT COALESCE(SUM(view_count), 0) FROM share`).Scan(&totalViews); err != nil {
+	var fileSizeResult struct {
+		Total int64 `gorm:"column:total"`
+	}
+	if err := r.store.Client.WithContext(ctx).
+		Model(&model.Resource{}).
+		Select("COALESCE(SUM(file_size), 0) AS total").
+		Scan(&fileSizeResult).Error; err != nil {
 		return 0, 0, 0, err
 	}
-	return totalFiles, totalSize, totalViews, nil
+	var viewResult struct {
+		Total int64 `gorm:"column:total"`
+	}
+	if err := r.store.Client.WithContext(ctx).
+		Model(&model.Share{}).
+		Select("COALESCE(SUM(view_count), 0) AS total").
+		Scan(&viewResult).Error; err != nil {
+		return 0, 0, 0, err
+	}
+	return totalFiles, fileSizeResult.Total, viewResult.Total, nil
 }
 
 func (r *ResourceDao) FindByIDAndUser(ctx context.Context, resourceID, userID int64) (*model.Resource, error) {
-	row := r.store.Client.QueryRowContext(ctx, `
-SELECT id, filename, hash, type, path, file_size, user_id, created_at
-FROM resource
-WHERE id = ? AND user_id = ?
-LIMIT 1;
-`, resourceID, userID)
 	var res model.Resource
-	if err := row.Scan(&res.ID, &res.Filename, &res.Hash, &res.Type, &res.Path, &res.FileSize, &res.UserID, &res.CreatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	err := r.store.Client.WithContext(ctx).Where("id = ? AND user_id = ?", resourceID, userID).First(&res).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
 		return nil, err
@@ -283,16 +253,14 @@ LIMIT 1;
 }
 
 func (r *ResourceDao) FindLatestByUser(ctx context.Context, userID int64) (*model.Resource, error) {
-	row := r.store.Client.QueryRowContext(ctx, `
-SELECT id, filename, hash, type, path, file_size, user_id, created_at
-FROM resource
-WHERE user_id = ?
-ORDER BY created_at DESC, id DESC
-LIMIT 1;
-`, userID)
 	var res model.Resource
-	if err := row.Scan(&res.ID, &res.Filename, &res.Hash, &res.Type, &res.Path, &res.FileSize, &res.UserID, &res.CreatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	err := r.store.Client.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Order("id DESC").
+		First(&res).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
 		return nil, err
@@ -301,38 +269,25 @@ LIMIT 1;
 }
 
 func (r *ResourceDao) DeleteWithShare(ctx context.Context, resourceID, userID int64) (bool, error) {
-	tx, err := r.store.Client.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	needRollback := true
-	defer func() {
-		if needRollback {
-			_ = tx.Rollback()
+	var deleted bool
+	err := r.store.Client.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("resource_id = ?", resourceID).Delete(&model.Share{}).Error; err != nil {
+			return err
 		}
-	}()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM share WHERE resource_id = ?`, resourceID); err != nil {
-		return false, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM resource_tag WHERE resource_id = ?`, resourceID); err != nil {
-		return false, err
-	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM resource WHERE id = ? AND user_id = ?`, resourceID, userID)
+		if err := tx.Where("resource_id = ?", resourceID).Delete(&model.ResourceTag{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("id = ? AND user_id = ?", resourceID, userID).Delete(&model.Resource{})
+		if result.Error != nil {
+			return result.Error
+		}
+		deleted = result.RowsAffected > 0
+		return nil
+	})
 	if err != nil {
 		return false, err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if affected == 0 {
-		return false, nil
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	needRollback = false
-	return true, nil
+	return deleted, nil
 }
 
 func (r *ResourceDao) GetUserPickResourceID(ctx context.Context, userID int64) (int64, bool, error) {
@@ -359,4 +314,76 @@ func (r *ResourceDao) ClearUserPickIfMatch(ctx context.Context, userID, resource
 		delete(r.picks, userID)
 	}
 	return nil
+}
+
+func (r *ResourceDao) findResourceIDsByTags(ctx context.Context, userID int64, tagFilters []string) ([]int64, error) {
+	var resourceIDs []int64
+	err := r.store.Client.WithContext(ctx).
+		Model(&model.ResourceTag{}).
+		Distinct("resource_tag.resource_id").
+		Joins("JOIN resource ON resource.id = resource_tag.resource_id").
+		Where("resource.user_id = ?", userID).
+		Where("resource_tag.tag IN ?", tagFilters).
+		Pluck("resource_tag.resource_id", &resourceIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	return resourceIDs, nil
+}
+
+func (r *ResourceDao) listTagsMapByResourceIDs(ctx context.Context, resourceIDs []int64) (map[int64][]string, error) {
+	result := make(map[int64][]string, len(resourceIDs))
+	if len(resourceIDs) == 0 {
+		return result, nil
+	}
+	var tagRows []model.ResourceTag
+	if err := r.store.Client.WithContext(ctx).
+		Where("resource_id IN ?", resourceIDs).
+		Order("tag ASC").
+		Find(&tagRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range tagRows {
+		result[row.ResourceID] = append(result[row.ResourceID], row.Tag)
+	}
+	return result, nil
+}
+
+func (r *ResourceDao) listLatestShareCodeMap(ctx context.Context, resourceIDs []int64) (map[int64]*string, error) {
+	result := make(map[int64]*string, len(resourceIDs))
+	if len(resourceIDs) == 0 {
+		return result, nil
+	}
+	var shares []model.Share
+	if err := r.store.Client.WithContext(ctx).
+		Where("resource_id IN ?", resourceIDs).
+		Where("password IS NULL OR password = ''").
+		Order("created_at DESC").
+		Order("id DESC").
+		Find(&shares).Error; err != nil {
+		return nil, err
+	}
+	for _, share := range shares {
+		if _, exists := result[share.ResourceID]; exists {
+			continue
+		}
+		code := share.Code
+		result[share.ResourceID] = &code
+	}
+	return result, nil
+}
+
+func collectResourceIDs(resources []model.Resource) []int64 {
+	ids := make([]int64, 0, len(resources))
+	for _, resource := range resources {
+		ids = append(ids, resource.ID)
+	}
+	return ids
+}
+
+func storageFromPath(path string) string {
+	if strings.HasPrefix(path, "local@/") {
+		return "local"
+	}
+	return "s3"
 }

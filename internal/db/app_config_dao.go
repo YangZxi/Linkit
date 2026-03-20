@@ -2,13 +2,13 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-
 	"strings"
 
+	"gorm.io/gorm/clause"
 	"linkit/internal/config"
+	"linkit/internal/db/model"
 )
 
 type AppConfigDao struct {
@@ -16,31 +16,23 @@ type AppConfigDao struct {
 }
 
 func (dao *AppConfigDao) getConfigs(ctx context.Context) (map[string]string, error) {
-	rows, err := dao.store.Client.QueryContext(ctx, `SELECT "key", "value" FROM app_config`)
-	if err != nil {
+	var items []model.AppConfig
+	if err := dao.store.Client.WithContext(ctx).Find(&items).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	out := make(map[string]string)
-	for rows.Next() {
-		var key string
-		var value sql.NullString
-		if err := rows.Scan(&key, &value); err != nil {
-			return nil, err
-		}
+	for _, item := range items {
+		key := item.Key
 		key = strings.ToUpper(strings.TrimSpace(key))
 		if key == "" {
 			continue
 		}
-		if value.Valid {
-			out[key] = value.String
+		if item.Value != nil {
+			out[key] = *item.Value
 		} else {
 			out[key] = ""
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	return out, nil
 }
@@ -64,12 +56,14 @@ func (dao *AppConfigDao) Sync(ctx context.Context, cfg *config.Config) error {
 
 func (dao *AppConfigDao) setConfig(ctx context.Context, key, value string) error {
 	key = strings.ToUpper(strings.TrimSpace(key))
-	_, err := dao.store.Client.ExecContext(ctx, `
-INSERT INTO app_config("key", "value")
-VALUES(?, ?)
-ON CONFLICT("key") DO UPDATE SET "value" = excluded."value";
-`, key, value)
-	return err
+	val := value
+	return dao.store.Client.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{"value": val}),
+	}).Create(&model.AppConfig{
+		Key:   key,
+		Value: &val,
+	}).Error
 }
 
 // SetConfig 写入数据库并更新本地 cfg（仅允许白名单 AppConfig）。

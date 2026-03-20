@@ -3,9 +3,7 @@ package db
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
-	"fmt"
 	"log/slog"
 	"math"
 	"os"
@@ -13,8 +11,10 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"linkit/internal/config"
 	"linkit/internal/db/model"
@@ -26,67 +26,8 @@ const (
 	guestEmail          = "guest@example.com"
 )
 
-const (
-	createUserTable = `
-CREATE TABLE IF NOT EXISTS "user" (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  nickname TEXT NOT NULL,
-  token TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-`
-	createAppConfigTable = `
-CREATE TABLE IF NOT EXISTS "app_config" (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  "key" TEXT NOT NULL UNIQUE,
-  "value" TEXT
-);
-`
-	createResourceTable = `
-CREATE TABLE IF NOT EXISTS "resource" (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  filename TEXT NOT NULL,
-  hash TEXT NOT NULL,
-  type TEXT NOT NULL,
-  path TEXT NOT NULL,
-  file_size INTEGER NOT NULL DEFAULT 0,
-  user_id INTEGER NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-`
-	createResourceTagTable = `
-CREATE TABLE IF NOT EXISTS "resource_tag" (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  resource_id INTEGER NOT NULL,
-  tag TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(resource_id, tag COLLATE NOCASE)
-);
-`
-	createResourceTagIndex = `
-CREATE INDEX IF NOT EXISTS "idx_resource_tag_tag" ON "resource_tag"(tag COLLATE NOCASE);
-`
-	createShareTable = `
-CREATE TABLE IF NOT EXISTS "share" (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  resource_id INTEGER NOT NULL,
-  code TEXT NOT NULL UNIQUE,
-  user_id INTEGER NOT NULL,
-  password TEXT,
-  expire_time DATETIME,
-  relay INTEGER NOT NULL DEFAULT 0,
-  view_count INTEGER NOT NULL DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-`
-)
-
 type DB struct {
-	Client    *sql.DB
+	Client    *gorm.DB
 	Logger    *slog.Logger
 	Cfg       config.Config
 	AppConfig *AppConfigDao
@@ -99,7 +40,9 @@ func NewStore(cfg config.Config, logger *slog.Logger, init bool) (*DB, error) {
 	if err := ensureDir(cfg.DatabasePath); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite3", cfg.DatabasePath)
+	db, err := gorm.Open(sqlite.Open(cfg.DatabasePath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -139,88 +82,45 @@ func ensureDir(dbPath string) error {
 }
 
 func (s *DB) Close() error {
-	return s.Client.Close()
+	sqlDB, err := s.Client.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }
 
 func (s *DB) upgradeSchema(ctx context.Context) error {
-	stmts := []string{
-		createUserTable,
-		createAppConfigTable,
-		createResourceTable,
-		createResourceTagTable,
-		createShareTable,
-		createResourceTagIndex,
-	}
-	for _, stmt := range stmts {
-		if _, err := s.Client.ExecContext(ctx, stmt); err != nil {
-			return err
-		}
-	}
-	if err := s.ensureColumn(ctx, "share", "password", "password TEXT"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "share", "expire_time", "expire_time DATETIME"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "share", "relay", "relay INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *DB) ensureColumn(ctx context.Context, table, column, columnDef string) error {
-	exists, err := s.columnExists(ctx, table, column)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	_, err = s.Client.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN %s`, table, columnDef))
-	return err
-}
-
-func (s *DB) columnExists(ctx context.Context, table, column string) (bool, error) {
-	rows, err := s.Client.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info("%s");`, table))
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name string
-		var ctype string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
+	return s.Client.WithContext(ctx).AutoMigrate(
+		&model.User{},
+		&model.AppConfig{},
+		&model.Resource{},
+		&model.ResourceTag{},
+		&model.Share{},
+	)
 }
 
 func (s *DB) ensureAdmin(ctx context.Context) error {
-	row := s.Client.QueryRowContext(ctx, `SELECT id, username, password, email, nickname, token, created_at, updated_at FROM user WHERE id = ?`, s.Cfg.AdminUserId)
 	var user model.User
-	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.Nickname, &user.Token, &user.CreatedAt, &user.UpdatedAt); err != nil {
-		s.Logger.Warn("获取管理员账号信息失败", "error", err)
-	}
-	if user.ID == s.Cfg.AdminUserId {
+	err := s.Client.WithContext(ctx).Where("id = ?", s.Cfg.AdminUserId).First(&user).Error
+	if err == nil {
 		s.Logger.Info("管理员账户已存在", "id", user.ID, "username", user.Username, "email", s.Cfg.AdminEmail)
 		return nil
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
 	}
 	pwHash, err := bcrypt.GenerateFromPassword([]byte(s.Cfg.AdminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(id, username, password, email, nickname) VALUES(?,?,?,?,?)`, s.Cfg.AdminUserId, s.Cfg.AdminUsername, string(pwHash), s.Cfg.AdminEmail, s.Cfg.AdminUsername)
+	user = model.User{
+		ID:       s.Cfg.AdminUserId,
+		Username: s.Cfg.AdminUsername,
+		Password: string(pwHash),
+		Email:    s.Cfg.AdminEmail,
+		Nickname: s.Cfg.AdminUsername,
+	}
+	err = s.Client.WithContext(ctx).Create(&user).Error
 	if err == nil {
 		s.Logger.Info("创建默认管理员账户", "username", s.Cfg.AdminUsername, "password", s.Cfg.AdminPassword, "email", s.Cfg.AdminEmail)
 	}
@@ -228,23 +128,22 @@ func (s *DB) ensureAdmin(ctx context.Context) error {
 }
 
 func (s *DB) ensureGuest(ctx context.Context) error {
-	var username string
-	err := s.Client.QueryRowContext(ctx, "SELECT username FROM user WHERE id = ?", GuestUserID).Scan(&username)
-	// guest user exists
+	var guestUser model.User
+	err := s.Client.WithContext(ctx).Where("id = ?", GuestUserID).First(&guestUser).Error
 	if err == nil {
-		if username != GuestUsername {
-			s.Logger.Warn("访客ID已被占用，访客上传将复用该用户", "guest_id", GuestUserID, "username", username)
+		if guestUser.Username != GuestUsername {
+			s.Logger.Warn("访客ID已被占用，访客上传将复用该用户", "guest_id", GuestUserID, "username", guestUser.Username)
 			return nil
 		}
 		s.Logger.Info("访__客账户已存在", "id", GuestUserID, "username", GuestUsername)
 		return nil
 	}
-	if err != sql.ErrNoRows {
+	if err != gorm.ErrRecordNotFound {
 		return err
 	}
 
-	var count int
-	if err := s.Client.QueryRowContext(ctx, "SELECT COUNT(1) FROM user WHERE username = ? OR email = ?", GuestUsername, guestEmail).Scan(&count); err != nil {
+	var count int64
+	if err := s.Client.WithContext(ctx).Model(&model.User{}).Where("username = ? OR email = ?", GuestUsername, guestEmail).Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {
@@ -262,7 +161,14 @@ func (s *DB) ensureGuest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.Client.ExecContext(ctx, `INSERT INTO user(id, username, password, email, nickname) VALUES(?,?,?,?,?)`, GuestUserID, GuestUsername, string(pwHash), guestEmail, GuestUsername)
+	guestUser = model.User{
+		ID:       GuestUserID,
+		Username: GuestUsername,
+		Password: string(pwHash),
+		Email:    guestEmail,
+		Nickname: GuestUsername,
+	}
+	err = s.Client.WithContext(ctx).Create(&guestUser).Error
 	if err == nil {
 		s.Logger.Info("创建访客账户", "id", GuestUserID, "username", GuestUsername)
 	}
