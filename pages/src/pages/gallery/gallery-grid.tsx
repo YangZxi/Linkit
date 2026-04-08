@@ -409,18 +409,6 @@ export default function GalleryGrid() {
           </CheckboxGroup>
         </div>
         <div className="flex items-center gap-3 text-sm text-default-500">
-          <Button
-            isLoading={loading}
-            color="primary"
-            size="sm"
-            variant="flat"
-            onPress={() => {
-              fetchTags();
-              fetchData(page, tagSelected);
-            }}
-          >
-            刷新
-          </Button>
           <span>共 {total} 个</span>
           <span>
             第 {Math.min(page, totalPages)} / {totalPages} 页

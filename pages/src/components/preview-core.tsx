@@ -263,13 +263,13 @@ function ImagePreview({
   return (
     <div
       className={clsx(
-        "flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-default-200/70 bg-default-50/60 p-4 shadow-lg dark:border-default-100/20 dark:bg-default-50/10",
+        "flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-default-200/70 bg-default-50/60 p-1 shadow-lg dark:border-default-100/20 dark:bg-default-50/10",
         className,
       )}
     >
       <img
         alt={filename}
-        className="block max-h-full max-w-full object-contain"
+        className="block max-h-[460px] max-w-full object-contain"
         src={rawUrl}
       />
     </div>
