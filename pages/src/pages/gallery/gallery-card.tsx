@@ -4,6 +4,7 @@ import { Button, Image } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import { inferMediaType, type MediaType, TypeLabel } from "@/lib/file";
+import { resourceFileUrl } from "./gallery-api";
 
 function formatDateText(value: string) {
   const date = new Date(value);
@@ -29,8 +30,8 @@ function TypeMark({ type }: { type: MediaType }) {
 
 type GalleryCardProps = {
   item: GalleryItem;
-  origin: string;
-  onCopyLink: (url: string) => void;
+  copying: boolean;
+  onCopyLink: () => void;
   onDelete: (item: GalleryItem) => void;
   onShare: () => void;
   deleting: boolean;
@@ -38,16 +39,14 @@ type GalleryCardProps = {
 
 export default function GalleryCard({
   item,
-  origin,
+  copying,
   onCopyLink,
   onDelete,
   onShare,
   deleting,
 }: GalleryCardProps) {
   const type = inferMediaType(item.type || "");
-  const rawUrl = item.shareCode ? `/r/${item.shareCode}` : "";
-  const shareUrl =
-    item.shareCode && origin ? `${origin}/s/${item.shareCode}` : "";
+  const rawUrl = resourceFileUrl(item);
   const storageLabel = item.storage === "local" ? "本地" : "S3";
 
   const cover = (() => {
@@ -155,15 +154,9 @@ export default function GalleryCard({
         <div className="absolute left-3 top-3">
           <TypeMark type={type} />
         </div>
-        {item.shareCode ? (
-          <span className="absolute bottom-3 right-3 rounded-full bg-default-900/70 px-3 py-1 text-[11px] text-white backdrop-blur dark:bg-default-100/30">
-            {storageLabel} {item.shareCode}
-          </span>
-        ) : (
-          <span className="absolute bottom-3 right-3 rounded-full bg-danger-500/80 px-3 py-1 text-[11px] text-white backdrop-blur">
-            暂无短链（{storageLabel}）
-          </span>
-        )}
+        <span className="absolute bottom-3 right-3 rounded-full bg-default-900/70 px-3 py-1 text-[11px] text-white backdrop-blur dark:bg-default-100/30">
+          {storageLabel}
+        </span>
       </div>
       <div className="flex flex-col gap-1 px-3 pb-3 pt-2">
         <p className="truncate text-sm font-semibold text-default-900 dark:text-default-700">
@@ -190,7 +183,7 @@ export default function GalleryCard({
           </Button>
           <Button
             isIconOnly
-            aria-label="加密分享"
+            aria-label="创建分享"
             color="secondary"
             size="sm"
             variant="flat"
@@ -201,11 +194,12 @@ export default function GalleryCard({
           </Button>
           <Button
             color="primary"
-            isDisabled={!shareUrl}
+            isLoading={copying}
+            isDisabled={deleting}
             size="sm"
             variant="flat"
             onClick={(event) => event.stopPropagation()}
-            onPress={() => shareUrl && onCopyLink(shareUrl)}
+            onPress={onCopyLink}
           >
             复制链接
           </Button>

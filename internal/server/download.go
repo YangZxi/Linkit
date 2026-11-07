@@ -117,7 +117,11 @@ func setCacheHeaders(c *gin.Context, stat os.FileInfo, etag string) {
 	c.Header("ETag", etag)
 	c.Header("Last-Modified", stat.ModTime().UTC().Format(http.TimeFormat))
 	// 安全优先：允许缓存，但每次使用前必须与服务端协商；避免长期缓存导致短链复用时内容错配。
-	c.Header("Cache-Control", "public, max-age=0, must-revalidate")
+	if c.GetBool("ownerFile") {
+		c.Header("Cache-Control", "private, no-store")
+	} else {
+		c.Header("Cache-Control", "public, max-age=0, must-revalidate")
+	}
 	// Range 会影响响应体，提示中间缓存按 Range 区分（浏览器也会更谨慎处理）。
 	c.Header("Vary", "Range")
 }
@@ -245,6 +249,9 @@ func relayRemoteFile(c *gin.Context, signedURL string, record *model.ShareResour
 		if value := strings.TrimSpace(resp.Header.Get(header)); value != "" {
 			c.Header(header, value)
 		}
+	}
+	if c.GetBool("ownerFile") {
+		c.Header("Cache-Control", "private, no-store")
 	}
 	// 统一附件下载。
 	c.Header("Content-Disposition", buildContentDisposition(filepath.Base(record.Filename)))

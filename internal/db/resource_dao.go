@@ -8,8 +8,9 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"gorm.io/gorm"
 	"linkit/internal/db/model"
+
+	"gorm.io/gorm"
 )
 
 const maxTagRuneLength = 6
@@ -91,7 +92,7 @@ func (r *ResourceDao) Insert(ctx context.Context, resource model.Resource) (int6
 	return resource.ID, nil
 }
 
-func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size int, tagFilters []string) ([]model.UserResourceWithShare, int64, error) {
+func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size int, tagFilters []string) ([]model.UserResource, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -110,7 +111,7 @@ func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size i
 			return nil, 0, err
 		}
 		if len(resourceIDs) == 0 {
-			return []model.UserResourceWithShare{}, 0, nil
+			return []model.UserResource{}, 0, nil
 		}
 		baseQuery = baseQuery.Where("id IN ?", resourceIDs)
 	}
@@ -125,7 +126,7 @@ func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size i
 		return nil, 0, err
 	}
 	if len(resources) == 0 {
-		return []model.UserResourceWithShare{}, total, nil
+		return []model.UserResource{}, total, nil
 	}
 
 	resourceIDs := collectResourceIDs(resources)
@@ -133,21 +134,17 @@ func (r *ResourceDao) ListByUser(ctx context.Context, userID int64, page, size i
 	if err != nil {
 		return nil, 0, err
 	}
-	shareMap, err := r.listLatestShareCodeMap(ctx, resourceIDs)
-	if err != nil {
-		return nil, 0, err
-	}
 
-	items := make([]model.UserResourceWithShare, 0, len(resources))
+	items := make([]model.UserResource, 0, len(resources))
 	for _, resource := range resources {
-		item := model.UserResourceWithShare{
-			ID:        resource.ID,
-			Filename:  resource.Filename,
-			Type:      resource.Type,
-			Storage:   storageFromPath(resource.Path),
-			CreatedAt: resource.CreatedAt,
-			ShareCode: shareMap[resource.ID],
-			Tags:      tagMap[resource.ID],
+		item := model.UserResource{
+			ID:             resource.ID,
+			Filename:       resource.Filename,
+			Type:           resource.Type,
+			Storage:        storageFromPath(resource.Path),
+			CreatedAt:      resource.CreatedAt,
+			ContentVersion: resource.Hash,
+			Tags:           tagMap[resource.ID],
 		}
 		if item.Tags == nil {
 			item.Tags = []string{}
@@ -349,28 +346,18 @@ func (r *ResourceDao) listTagsMapByResourceIDs(ctx context.Context, resourceIDs 
 	return result, nil
 }
 
-func (r *ResourceDao) listLatestShareCodeMap(ctx context.Context, resourceIDs []int64) (map[int64]*string, error) {
-	result := make(map[int64]*string, len(resourceIDs))
-	if len(resourceIDs) == 0 {
-		return result, nil
-	}
-	var shares []model.Share
-	if err := r.store.Client.WithContext(ctx).
-		Where("resource_id IN ?", resourceIDs).
-		Where("password IS NULL OR password = ''").
-		Order("created_at DESC").
-		Order("id DESC").
-		Find(&shares).Error; err != nil {
-		return nil, err
-	}
-	for _, share := range shares {
-		if _, exists := result[share.ResourceID]; exists {
-			continue
-		}
-		code := share.Code
-		result[share.ResourceID] = &code
-	}
-	return result, nil
+// ReplaceFile uses the previous path to avoid overwriting a concurrent replacement.
+func (r *ResourceDao) ReplaceFile(ctx context.Context, previous model.Resource, next model.Resource) (bool, error) {
+	result := r.store.Client.WithContext(ctx).Model(&model.Resource{}).
+		Where("id = ? AND user_id = ? AND path = ?", previous.ID, previous.UserID, previous.Path).
+		Updates(map[string]any{"filename": next.Filename, "hash": next.Hash, "type": next.Type, "path": next.Path, "file_size": next.FileSize})
+	return result.RowsAffected > 0, result.Error
+}
+
+func (r *ResourceDao) CountByPath(ctx context.Context, path string) (int64, error) {
+	var count int64
+	err := r.store.Client.WithContext(ctx).Model(&model.Resource{}).Where("path = ?", path).Count(&count).Error
+	return count, err
 }
 
 func collectResourceIDs(resources []model.Resource) []int64 {

@@ -33,7 +33,7 @@ export type GalleryItem = {
   type: string;
   storage: "local" | "s3";
   createdAt: string;
-  shareCode: string | null;
+  contentVersion: string;
   tags: string[];
 };
 
@@ -53,4 +53,15 @@ export type GalleryDeleteResponse = {
 
 export type CreateShareResponse = {
   code: string;
+  expireTime: string | null;
+};
+
+export type ManagedShare = {
+  id: number;
+  code: string;
+  password: string | null;
+  expireTime: string | null;
+  relay: boolean;
+  viewCount: number;
+  createdAt: string;
 };

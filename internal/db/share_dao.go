@@ -3,13 +3,16 @@ package db
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
+	"linkit/internal/db/model"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"linkit/internal/db/model"
 )
 
 type ShareDao struct {
@@ -28,11 +31,21 @@ func randomCode(n int) (string, error) {
 	return string(buf), nil
 }
 
+var ErrShareCodeTaken = errors.New("分享短码已被占用，请更换")
+
 func (s *ShareDao) CreateShareCode(ctx context.Context, resourceID int64, userID int64, password *string, expireTime *time.Time, relay bool) (*model.ShareCode, error) {
+	return s.CreateShareWithCode(ctx, resourceID, userID, "", password, expireTime, relay)
+}
+
+func (s *ShareDao) CreateShareWithCode(ctx context.Context, resourceID, userID int64, customCode string, password *string, expireTime *time.Time, relay bool) (*model.ShareCode, error) {
 	for i := 0; i < 5; i++ {
-		code, err := randomCode(6)
-		if err != nil {
-			return nil, err
+		code := customCode
+		if code == "" {
+			var err error
+			code, err = randomCode(6)
+			if err != nil {
+				return nil, err
+			}
 		}
 		share := model.Share{
 			ResourceID: resourceID,
@@ -48,6 +61,9 @@ func (s *ShareDao) CreateShareCode(ctx context.Context, resourceID int64, userID
 		}
 		if err := s.store.Client.WithContext(ctx).Clauses(clause.Returning{}).Create(&share).Error; err != nil {
 			if isUniqueConstraintError(err) {
+				if customCode != "" {
+					return nil, ErrShareCodeTaken
+				}
 				continue
 			}
 			return nil, err
@@ -63,6 +79,41 @@ func (s *ShareDao) CreateShareCode(ctx context.Context, resourceID int64, userID
 		}, nil
 	}
 	return nil, fmt.Errorf("生成短链失败")
+}
+
+func (s *ShareDao) ListByResource(ctx context.Context, resourceID, userID int64) ([]model.Share, error) {
+	shares := make([]model.Share, 0)
+	err := s.store.Client.WithContext(ctx).
+		Where("resource_id = ? AND user_id = ?", resourceID, userID).
+		Find(&shares).Error
+	// Compare parsed times so existing records with different UTC offsets sort correctly.
+	now := time.Now()
+	sort.Slice(shares, func(i, j int) bool {
+		iExpired := shares[i].ExpireTime != nil && !shares[i].ExpireTime.After(now)
+		jExpired := shares[j].ExpireTime != nil && !shares[j].ExpireTime.After(now)
+		if iExpired != jExpired {
+			return !iExpired
+		}
+		if !shares[i].CreatedAt.Equal(shares[j].CreatedAt) {
+			return shares[i].CreatedAt.After(shares[j].CreatedAt)
+		}
+		return shares[i].ID > shares[j].ID
+	})
+	return shares, err
+}
+
+func (s *ShareDao) UpdateByResource(ctx context.Context, shareID, resourceID, userID int64, values map[string]any) (bool, error) {
+	result := s.store.Client.WithContext(ctx).Model(&model.Share{}).
+		Where("id = ? AND resource_id = ? AND user_id = ?", shareID, resourceID, userID).
+		Updates(values)
+	return result.RowsAffected > 0, result.Error
+}
+
+func (s *ShareDao) DeleteByResource(ctx context.Context, shareID, resourceID, userID int64) (bool, error) {
+	result := s.store.Client.WithContext(ctx).
+		Where("id = ? AND resource_id = ? AND user_id = ?", shareID, resourceID, userID).
+		Delete(&model.Share{})
+	return result.RowsAffected > 0, result.Error
 }
 
 func (s *ShareDao) GetShareByCode(ctx context.Context, code string) (*model.ShareResource, error) {

@@ -1,8 +1,8 @@
 package server
 
 import (
+	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -16,7 +16,7 @@ import (
 	"linkit/internal/storage"
 )
 
-var codeRegex = regexp.MustCompile(`^[a-zA-Z0-9]{6}$`)
+var codeRegex = regexp.MustCompile(`^[a-zA-Z0-9]{4,32}$`)
 
 func ShareInfoHandler(store *db.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -36,7 +36,6 @@ func ShareInfoHandler(store *db.DB) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, Fail[any]("资源不存在", 404))
 			return
 		}
-		slog.Info("record", "data", record, "password", record.Password)
 		if !validateShareAccess(c, record) {
 			return
 		}
@@ -118,14 +117,17 @@ func validateShareAccess(c *gin.Context, record *model.ShareResource) bool {
 }
 
 type createShareRequest struct {
-	ResourceID int64   `json:"resourceId"`
-	Password   string  `json:"password"`
-	ExpireTime *string `json:"expireTime"`
-	Relay      bool    `json:"relay"`
+	ResourceID      int64   `json:"resourceId"`
+	Code            string  `json:"code"`
+	Password        string  `json:"password"`
+	ExpireTime      *string `json:"expireTime"`
+	DurationSeconds *int64  `json:"durationSeconds"`
+	Relay           bool    `json:"relay"`
 }
 
 type createShareResponse struct {
-	Code string `json:"code"`
+	Code       string     `json:"code"`
+	ExpireTime *time.Time `json:"expireTime"`
 }
 
 func CreateShareHandler(store *db.DB) gin.HandlerFunc {
@@ -142,11 +144,16 @@ func CreateShareHandler(store *db.DB) gin.HandlerFunc {
 		}
 		password := strings.TrimSpace(req.Password)
 		passwordLen := len([]rune(password))
-		if passwordLen < 4 || passwordLen > 32 {
+		if password != "" && (passwordLen < 4 || passwordLen > 32) {
 			c.JSON(http.StatusBadRequest, Fail[any]("分享密码长度需为 4-32 位", 400))
 			return
 		}
-		expireTime, err := parseExpireTime(req.ExpireTime)
+		code := strings.TrimSpace(req.Code)
+		if code != "" && !codeRegex.MatchString(code) {
+			c.JSON(http.StatusBadRequest, Fail[any]("分享短码需为 4-32 位英文字母或数字", 400))
+			return
+		}
+		expireTime, err := shareExpireTime(req.DurationSeconds, req.ExpireTime)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, Fail[any](err.Error(), 400))
 			return
@@ -162,12 +169,16 @@ func CreateShareHandler(store *db.DB) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, Fail[any]("资源不存在", 404))
 			return
 		}
-		shareRecord, err := store.Share.CreateShareCode(ctx, req.ResourceID, user.ID, &password, expireTime, req.Relay)
+		shareRecord, err := store.Share.CreateShareWithCode(ctx, req.ResourceID, user.ID, code, &password, expireTime, req.Relay)
 		if err != nil {
+			if errors.Is(err, db.ErrShareCodeTaken) {
+				c.JSON(http.StatusConflict, Fail[any](err.Error(), 409))
+				return
+			}
 			c.JSON(http.StatusInternalServerError, Fail[any]("创建分享失败", 500))
 			return
 		}
-		c.JSON(http.StatusOK, Ok(createShareResponse{Code: shareRecord.Code}, "ok"))
+		c.JSON(http.StatusOK, Ok(createShareResponse{Code: shareRecord.Code, ExpireTime: expireTime}, "ok"))
 	}
 }
 

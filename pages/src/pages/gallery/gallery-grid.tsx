@@ -3,7 +3,6 @@ import type {
   GalleryItem,
   GalleryResponse,
   GalleryTagsResponse,
-  CreateShareResponse,
 } from "@/types/api";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,75 +15,24 @@ import {
   ModalHeader,
   Spinner,
   addToast,
-  Input,
-  Alert,
-  NumberInput,
-  Switch,
   CheckboxGroup,
   Select,
   SelectItem,
 } from "@heroui/react";
 import clsx from "clsx";
 
-import PreviewCore from "@/components/preview-core";
 import GalleryCard from "./gallery-card";
+import ResourcePreviewModal from "./resource-preview-modal";
+import ShareFormModal from "./share-form-modal";
+import { getResourceShares, latestPublicShare, shareUrl } from "./gallery-api";
 
 import api, { ApiResponse } from "@/lib/api";
-import { inferMediaType } from "@/lib/file";
 import { copyText } from "@/lib/utils";
-import XModal from "@/components/modal";
 import BillCheckbox from "@/components/bill-checkbox";
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 50] as const;
-const SHARE_PASSWORD_MIN = 4;
-const SHARE_PASSWORD_MAX = 32;
-type ShareDurationUnit = "minutes" | "hours" | "days";
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
-
-function buildExpireDateTime(
-  duration: number,
-  unit: ShareDurationUnit,
-): string | null {
-  if (!Number.isFinite(duration) || duration <= 0) {
-    return null;
-  }
-
-  const target = new Date();
-
-  // 根据选择的单位计算过期时间
-  if (unit === "minutes") {
-    target.setMinutes(target.getMinutes() + duration);
-  } else if (unit === "hours") {
-    target.setHours(target.getHours() + duration);
-  } else if (unit === "days") {
-    target.setDate(target.getDate() + duration);
-  } else {
-    return null;
-  }
-
-  const pad = (num: number) => String(num).padStart(2, "0");
-
-  const datetime = [
-    target.getFullYear(),
-    pad(target.getMonth() + 1),
-    pad(target.getDate()),
-  ].join("-") +
-    ` ${pad(target.getHours())}:${pad(target.getMinutes())}:${pad(target.getSeconds())}`;
-
-  return datetime;
-}
-
-function buidlPwd(length: number = 4): string {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let pwd = "";
-
-  for (let i = 0; i < length; i += 1) {
-    pwd += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return pwd;
-}
 
 function deleteGalleryItems(ids: number[]) {
   return Promise.all(
@@ -103,16 +51,10 @@ export default function GalleryGrid() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [origin, setOrigin] = useState("");
   const [preview, setPreview] = useState<GalleryItem | null>(null);
 
   const [share, setShare] = useState<GalleryItem | null>(null);
-  const [sharePassword, setSharePassword] = useState("");
-  const [shareDuration, setShareDuration] = useState<number>(0);
-  const [shareExpireTime, setShareExpireTime] = useState<string | null>(null);
-  const [shareDurationUnit, setShareDurationUnit] =
-    useState<ShareDurationUnit>("days");
-  const [shareRelay, setShareRelay] = useState(false);
+  const [copyingId, setCopyingId] = useState<number | null>(null);
 
   const [bathDeleteMode, setBathDeleteMode] = useState(false);
   const [batchDeleteIds, setBatchDeleteIds] = useState<number[]>([]);
@@ -120,29 +62,6 @@ export default function GalleryGrid() {
     [],
   );
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-  const [shareSubmitting, setShareSubmitting] = useState(false);
-  const [shareResult, setShareResult] = useState<{
-    url: string;
-    code: string;
-    password: string;
-  } | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (share) {
-      setSharePassword(buidlPwd(4));
-      setShareResult(null);
-      setShareDuration(0);
-      setShareExpireTime(null);
-      setShareRelay(false);
-    }
-  }, [share]);
-
   useEffect(() => {
     if (!bathDeleteMode) {
       setBatchDeleteIds([]);
@@ -328,57 +247,24 @@ export default function GalleryGrid() {
     setPage((prev) => prev + 1);
   }, []);
 
-  const submitShare = useCallback(async () => {
-    if (!share || shareSubmitting) return;
-    if (shareResult) {
-      const copyContent = `分享链接：${shareResult.url}\n密码：${shareResult.password}`;
-      const ok = await copyText(copyContent);
-      addToast({
-        title: ok ? "已复制完整分享信息" : "复制失败",
-        color: ok ? "success" : "danger",
-        variant: "flat",
-      });
-      return;
-    }
-    const trimmedPassword = sharePassword.trim();
-    const length = trimmedPassword.length;
-    if (length < SHARE_PASSWORD_MIN || length > SHARE_PASSWORD_MAX) {
-      addToast({
-        title: "分享密码长度不合法",
-        description: `请设置 ${SHARE_PASSWORD_MIN}-${SHARE_PASSWORD_MAX} 位密码`,
-        color: "warning",
-        variant: "flat",
-      });
-      return;
-    }
-    setShareSubmitting(true);
+  const copyResourceLink = async (item: GalleryItem) => {
+    if (copyingId !== null) return;
+    setCopyingId(item.id);
     try {
-      const res = await api.post<CreateShareResponse>("/share", {
-        resourceId: share.id,
-        password: trimmedPassword,
-        expireTime: shareExpireTime,
-        relay: shareRelay,
-      });
-      const shareUrl = origin
-        ? `${origin}/s/${res.code}`
-        : `/s/${res.code}`;
-      addToast({
-        title: "私密分享创建成功",
-        description: "可复制分享信息发送给对方",
-        color: "success",
-        variant: "flat",
-      });
-      setSharePassword(trimmedPassword);
-      setShareResult({
-        url: shareUrl,
-        code: res.code,
-        password: trimmedPassword,
-      });
-      await fetchData(page);
+      const shares = await getResourceShares(item.id);
+      const share = latestPublicShare(shares);
+      if (share) {
+        await handleCopy(shareUrl(share.code));
+      } else {
+        setShare(item);
+        addToast({ title: "暂无可用的无密码分享，请先创建", color: "warning" });
+      }
+    } catch (error) {
+      if (error instanceof Error) addToast({ title: error.message, color: "danger" });
     } finally {
-      setShareSubmitting(false);
+      setCopyingId(null);
     }
-  }, [fetchData, origin, page, share, shareRelay, shareResult, sharePassword, shareSubmitting]);
+  };
 
   const deletingIdSet = useMemo(() => {
     if (!deleteSubmitting) return new Set<number>();
@@ -438,6 +324,12 @@ export default function GalleryGrid() {
               )}
               role="button"
               tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+                event.preventDefault();
+                if (bathDeleteMode) toggleBatchDeleteItem(item);
+                else setPreview(item);
+              }}
               onClick={() => {
                 if (bathDeleteMode) {
                   toggleBatchDeleteItem(item);
@@ -445,24 +337,14 @@ export default function GalleryGrid() {
                   return;
                 }
 
-                if (!item.shareCode) {
-                  addToast({
-                    title: "无法预览",
-                    description: "该资源缺少分享短链，无法打开预览",
-                    color: "warning",
-                    variant: "flat",
-                  });
-
-                  return;
-                }
                 setPreview(item);
               }}
             >
               <GalleryCard
                 deleting={deletingIdSet.has(item.id)}
                 item={item}
-                origin={origin}
-                onCopyLink={handleCopy}
+                copying={copyingId === item.id}
+                onCopyLink={() => void copyResourceLink(item)}
                 onDelete={(target) => setDeleteConfirmItems([target])}
                 onShare={() => setShare(item)}
               />
@@ -638,187 +520,20 @@ export default function GalleryGrid() {
         </ModalContent>
       </Modal>
 
-      {/* preview modal */}
-      <XModal
-        isDismissable={false}
-        isOpen={Boolean(preview)}
-        placement="center"
-        size="4xl"
-        onOpenChange={(open: boolean) => !open && setPreview(null)}
-        header={<>
-          <span className="text-lg font-semibold text-default-900 dark:text-default-50">
-            预览
-          </span>
-          <span className="text-sm text-default-500">
-            {preview?.filename}
-          </span>
-        </>}
-        footer={(preview && preview.shareCode) && <>
-          <Button
-            color="secondary"
-            variant="bordered"
-            onPress={() =>
-              handleCopy(
-                origin
-                  ? `${origin}/r/${preview.shareCode}`
-                  : `/r/${preview.shareCode}`,
-              )
-            }
-          >
-            获取原始链接
-          </Button>
-          <Button
-            as="a"
-            color="primary"
-            download
-            href={`/r/${preview.shareCode}`}
-            variant="flat"
-          >
-            下载
-          </Button>
-          <Button color="default" variant="flat" onPress={() => setPreview(null)}>
-            关闭
-          </Button>
-        </>}
-      >
-        {preview && preview.shareCode ? (
-          <PreviewCore
-            className="min-h-[260px] max-h-[470px] w-full"
-            filename={preview.filename}
-            rawUrl={`/r/${preview.shareCode}`}
-            type={inferMediaType(preview.type)}
-          />
-        ) : (<p className="text-default-500">
-          该资源缺少短链信息，请重新生成后再试。
-        </p>)}
-      </XModal>
-
-      {/* create share modal */}
-      <XModal
-        isDismissable={false}
-        isOpen={Boolean(share)}
-        header={<>
-          <span className="text-lg font-semibold">
-            创建私密分享
-          </span>
-          <span className="text-sm text-default-500">
-            {share?.filename}
-          </span>
-        </>}
-        submitText={shareResult ? "复制" : "创建分享"}
-        onSubmit={submitShare}
-        onOpenChange={(open: boolean) => !open && setShare(null)}
-      >
-        <Input
-          autoFocus
-          isDisabled={shareSubmitting || Boolean(shareResult)}
-          label="分享密码 (4-32位)"
-          maxLength={SHARE_PASSWORD_MAX}
-          minLength={SHARE_PASSWORD_MIN}
-          type="text"
-          value={sharePassword}
-          onValueChange={setSharePassword}
-        // endContent={
-        //   <Button 
-        //     isIconOnly
-        //     color="primary"
-        //     variant="flat"
-        //     isDisabled={shareSubmitting || Boolean(shareResult)}
-        //     onPress={() => {
-        //       if (shareSubmitting || shareResult) return;
-        //       setSharePassword(buidlPwd(6));
-        //     }}
-        //   >
-        //     <Icon width={28} height={28} icon="iconoir:refresh-circle-solid"/>
-        //   </Button>
-        // }
-        />
-        <NumberInput
-          value={shareDuration}
-          onValueChange={(val: number) => {
-            setShareDuration(val);
-            setShareExpireTime(buildExpireDateTime(val, shareDurationUnit));
+      {preview && (
+        <ResourcePreviewModal
+          key={preview.id}
+          resource={preview}
+          onClose={() => setPreview(null)}
+          onReplaced={(updated) => {
+            setPreview(updated);
+            setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
           }}
-          defaultValue={0}
-          minValue={0}
-          isDisabled={shareSubmitting || Boolean(shareResult)}
-          endContent={
-            <div className="flex items-center">
-              <label className="sr-only" htmlFor="time-unit">
-                Time Unit
-              </label>
-              <select
-                aria-label="Select time unit"
-                className="outline-solid outline-transparent border-0 bg-transparent text-default-400 text-small"
-                value={shareDurationUnit}
-                id="time-unit"
-                name="time-unit"
-                onChange={(event) => {
-                  const nextUnit = event.target.value as ShareDurationUnit;
-
-                  setShareDurationUnit(nextUnit);
-                  setShareExpireTime(buildExpireDateTime(shareDuration, nextUnit));
-                }}
-              >
-                <option aria-label="minutes" value="minutes">
-                  分钟
-                </option>
-                <option aria-label="hours" value="hours">
-                  小时
-                </option>
-                <option aria-label="days" value="days">
-                  天
-                </option>
-              </select>
-            </div>
-          }
-          label={"有效期 (为 0 表示永不过期)"}
-          placeholder="0"
-          className="max-w-[270px]"
         />
-        <Input label="过期时间" type="text"
-          readOnly
-          isDisabled={shareSubmitting || Boolean(shareResult)}
-          value={shareExpireTime as unknown as string}
-          size="sm" variant="underlined" placeholder="请先在上方输入有效期"
-        />
-        <Switch
-          defaultSelected={false}
-          isDisabled={shareSubmitting || Boolean(shareResult)}
-          isSelected={shareRelay}
-          size="sm"
-          onValueChange={setShareRelay}
-        >
-          {shareRelay ? "开启" : "关闭"}资源加速（适用于使用 S3 时，使用服务器转发文件，仅非 local 存储生效）
-        </Switch>
-        {shareResult && (
-          <Alert
-            color="success"
-            description={null
-            }
-            variant="flat"
-          >
-            <div className="space-y-1 text-sm text-default-600">
-              <p className="font-bold">创建私密分享成功</p>
-              <p className="break-all">
-                链接：
-                <span className="text-primary underline cursor-pointer"
-                  onClick={async (event) => {
-                    const ok = await copyText(shareResult.url);
-                    addToast({
-                      title: ok ? "已复制分享链接" : "复制失败",
-                      color: ok ? "success" : "danger",
-                      variant: "flat",
-                    });
-                  }}
-                >{shareResult.url}</span>
-              </p>
-              <p>密码：{shareResult.password}</p>
-            </div>
-          </Alert>
-        )}
-        {/* <XCalendar /> */}
-      </XModal>
-    </div >
+      )}
+      {share && (
+        <ShareFormModal resource={share} onClose={() => setShare(null)} onSaved={() => {}} />
+      )}
+    </div>
   );
 }

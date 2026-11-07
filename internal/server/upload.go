@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -29,16 +30,20 @@ const (
 )
 
 type uploadResponse struct {
-	Merged      bool   `json:"merged"`
-	UploadID    string `json:"uploadId"`
-	Filename    string `json:"filename"`
-	Size        int64  `json:"size,omitempty"`
-	Skipped     bool   `json:"skipped,omitempty"`
-	ChunkIndex  *int64 `json:"chunkIndex,omitempty"`
-	TotalChunks *int64 `json:"totalChunks,omitempty"`
-	ChunkSize   *int64 `json:"chunkSize,omitempty"`
-	ShareCode   string `json:"shareCode,omitempty"`
-	ResourceID  int64  `json:"resourceId,omitempty"`
+	Merged         bool   `json:"merged"`
+	UploadID       string `json:"uploadId"`
+	Filename       string `json:"filename"`
+	Size           int64  `json:"size,omitempty"`
+	Skipped        bool   `json:"skipped,omitempty"`
+	ChunkIndex     *int64 `json:"chunkIndex,omitempty"`
+	TotalChunks    *int64 `json:"totalChunks,omitempty"`
+	ChunkSize      *int64 `json:"chunkSize,omitempty"`
+	ShareCode      string `json:"shareCode,omitempty"`
+	ResourceID     int64  `json:"resourceId,omitempty"`
+	Type           string `json:"type,omitempty"`
+	Storage        string `json:"storage,omitempty"`
+	ContentVersion string `json:"contentVersion,omitempty"`
+	Warning        string `json:"warning,omitempty"`
 }
 
 func UploadQueryHandler(cfg *config.Config) gin.HandlerFunc {
@@ -78,6 +83,29 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 		if user == nil {
 			user = &model.User{ID: db.GuestUserID, Username: db.GuestUsername}
 		}
+		var previous *model.Resource
+		if c.Param("id") != "" {
+			resourceID, _, ok := resourceShareIDs(c)
+			if !ok {
+				return
+			}
+			ctx, cancel := store.WithTimeout(c.Request.Context(), 5*time.Second)
+			var err error
+			previous, err = store.Resource.FindByIDAndUser(ctx, resourceID, user.ID)
+			cancel()
+			if err != nil || previous == nil {
+				c.JSON(http.StatusNotFound, Fail[any]("资源不存在", 404))
+				return
+			}
+		}
+		// Every upload owns its object, so concurrent uploads cannot reuse a path
+		// while a replacement is deleting its previous file.
+		var token [16]byte
+		if _, err := rand.Read(token[:]); err != nil {
+			c.JSON(http.StatusInternalServerError, Fail[any]("准备文件存储失败", 500))
+			return
+		}
+		objectPrefix := fmt.Sprintf("uploads/%x/", token)
 		if err := ensureDir(cfg.ChunkDir); err != nil {
 			c.JSON(http.StatusInternalServerError, Fail[any]("准备目录失败", 500))
 			return
@@ -97,6 +125,7 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 			c.JSON(http.StatusBadRequest, Fail[any]("上传数据格式错误", 400))
 			return
 		}
+		defer form.RemoveAll()
 		files := form.File[uploadField]
 		if len(files) != 1 {
 			c.JSON(http.StatusBadRequest, Fail[any]("只支持单文件上传", 400))
@@ -105,6 +134,9 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 		fh := files[0]
 
 		uploadID := utli.FirstValue(form.Value["uploadId"], fmt.Sprintf("%d-%s", time.Now().UnixMilli(), fh.Filename))
+		if previous != nil {
+			uploadID = fmt.Sprintf("replace-%d-%d-%x", user.ID, previous.ID, md5.Sum([]byte(uploadID)))
+		}
 		fileName := filepath.Base(utli.FirstValue(form.Value["filename"], fh.Filename))
 		fileSize := utli.ParseInt64(utli.FirstValue(form.Value["filesize"], fmt.Sprintf("%d", fh.Size)), fh.Size)
 		chunkIndexPtr := utli.ParseOptionalInt64(utli.FirstValue(form.Value["chunkIndex"], ""))
@@ -131,7 +163,7 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 		}
 
 		requireChunk := fileSize > cfg.ChunkThreshold
-		if fileSize > cfg.MaxFileSize {
+		if fileSize < 0 || fileSize > cfg.MaxFileSize {
 			c.JSON(http.StatusBadRequest, Fail[any]("文件大小超过限制", 400))
 			return
 		}
@@ -149,14 +181,18 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 				return
 			}
 			fileSize := int64(len(data))
-			objectKey := storage.BuildObjectKey(hash, fileName, time.Now())
+			if fileSize > cfg.MaxFileSize {
+				c.JSON(http.StatusBadRequest, Fail[any]("文件大小超过限制", 400))
+				return
+			}
+			objectKey := objectPrefix + storage.BuildObjectKey(hash, fileName, time.Now())
 			storedPath, err := stg.Write(objectKey, bytes.NewReader(data), int64(len(data)), fileType)
 			if err != nil {
 				slog.Error("写入文件失败", "err", err)
 				c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
 				return
 			}
-			resID, share, err := persistResource(c, store, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID}, tags)
+			resID, share, err := persistUploadedResource(c, store, reg, previous, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID}, tags)
 			if err != nil {
 				slog.Error("写入数据库失败", "err", err)
 				c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
@@ -167,7 +203,7 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 				return
 			}
 			reg.Logger.Info("文件上传完成", "user", user.Username, "file", fileName, "resource_id", resID, "share", share)
-			c.JSON(http.StatusOK, Ok(uploadResponse{Merged: true, UploadID: uploadID, Filename: fileName, Size: fileSize, ShareCode: share, ResourceID: resID}, "ok"))
+			c.JSON(http.StatusOK, Ok(uploadResponse{Merged: true, UploadID: uploadID, Filename: fileName, Size: fileSize, ShareCode: share, ResourceID: resID, Type: fileType, Storage: string(stg.Platform()), ContentVersion: hash, Warning: c.GetString("uploadWarning")}, "ok"))
 			return
 		}
 
@@ -219,12 +255,18 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 					return
 				}
 				fileSize = stat.Size()
+				if fileSize > cfg.MaxFileSize {
+					_ = os.Remove(mergedPath)
+					_ = os.RemoveAll(chunkFolder)
+					c.JSON(http.StatusBadRequest, Fail[any]("文件大小超过限制", 400))
+					return
+				}
 				hash, err := hashFile(mergedPath)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, Fail[any]("计算摘要失败", 500))
 					return
 				}
-				objectKey := storage.BuildObjectKey(hash, fileName, time.Now())
+				objectKey := objectPrefix + storage.BuildObjectKey(hash, fileName, time.Now())
 				f, err := os.Open(mergedPath)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, Fail[any]("读取文件失败", 500))
@@ -236,7 +278,7 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 					c.JSON(http.StatusInternalServerError, Fail[any]("存储失败", 500))
 					return
 				}
-				resID, share, err := persistResource(c, store, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID}, tags)
+				resID, share, err := persistUploadedResource(c, store, reg, previous, model.Resource{Filename: fileName, Hash: hash, Type: fileType, Path: storedPath, FileSize: fileSize, UserID: user.ID}, tags)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, Fail[any]("记录失败", 500))
 					return
@@ -248,7 +290,7 @@ func UploadHandler(store *db.DB, cfg *config.Config, reg *storage.Registry) gin.
 				reg.Logger.Info("分片上传完成", "user", user.Username, "file", fileName, "resource_id", resID, "share", share)
 				_ = os.Remove(mergedPath)
 				_ = os.RemoveAll(chunkFolder)
-				c.JSON(http.StatusOK, Ok(uploadResponse{Merged: true, UploadID: uploadID, Filename: fileName, Size: fileSize, ShareCode: share, ResourceID: resID}, "ok"))
+				c.JSON(http.StatusOK, Ok(uploadResponse{Merged: true, UploadID: uploadID, Filename: fileName, Size: fileSize, ShareCode: share, ResourceID: resID, Type: fileType, Storage: string(stg.Platform()), ContentVersion: hash, Warning: c.GetString("uploadWarning")}, "ok"))
 				return
 			}
 		}

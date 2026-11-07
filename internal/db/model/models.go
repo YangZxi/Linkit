@@ -60,16 +60,15 @@ type ShareCode struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// 用于列表返回携带分享码
-
-type UserResourceWithShare struct {
-	ID        int64     `json:"id"`
-	Filename  string    `json:"filename"`
-	Type      string    `json:"type"`
-	Storage   string    `json:"storage"`
-	CreatedAt time.Time `json:"createdAt"`
-	ShareCode *string   `json:"shareCode"`
-	Tags      []string  `json:"tags"`
+// UserResource is the owner-facing resource list item. Shares are fetched separately.
+type UserResource struct {
+	ID             int64     `json:"id"`
+	Filename       string    `json:"filename"`
+	Type           string    `json:"type"`
+	Storage        string    `json:"storage"`
+	CreatedAt      time.Time `json:"createdAt"`
+	ContentVersion string    `json:"contentVersion"`
+	Tags           []string  `json:"tags"`
 }
 
 type ShareResource struct {

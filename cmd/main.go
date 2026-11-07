@@ -90,6 +90,11 @@ func main() {
 		apiAuth.GET("/gallery/pick", server.GalleryPickHandler(store, storageReg))
 		apiAuth.POST("/gallery/pick", server.GalleryPickUpdateHandler(store))
 		apiAuth.POST("/gallery/delete", server.GalleryDeleteHandler(store, storageReg))
+		apiAuth.GET("/gallery/:id/file", server.ResourceFileHandler(store, storageReg))
+		apiAuth.POST("/gallery/:id/file", server.UploadHandler(store, &cfg, storageReg))
+		apiAuth.GET("/gallery/:id/shares", server.ResourceSharesHandler(store))
+		apiAuth.POST("/gallery/:id/shares/:shareId/update", server.UpdateResourceShareHandler(store))
+		apiAuth.POST("/gallery/:id/shares/:shareId/delete", server.DeleteResourceShareHandler(store))
 		apiAuth.POST("/share", server.CreateShareHandler(store))
 
 		apiAdmin := apiAuth.Group("/admin")

@@ -3,6 +3,10 @@ import { addToast } from "@heroui/react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
+export function apiUrl(path: string) {
+  return `${API_BASE}${path}`;
+}
+
 const toastCache = new Set<string>();
 
 type HttpMethod = "GET" | "POST";
