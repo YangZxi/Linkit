@@ -11,6 +11,7 @@ import { copyText } from "@/lib/utils";
 import { inferMediaType } from "@/lib/file";
 import PreviewCore from "@/components/preview-core";
 import ShareFormModal from "./share-form-modal";
+import ResourceTags from "./resource-tags";
 import {
   formatShareTime, getResourceShares, isShareExpired, latestPublicShare,
   replaceResourceFile, resourceFileUrl, shareCopyText, shareUrl, sortShares,
@@ -20,9 +21,10 @@ type Props = {
   resource: GalleryItem;
   onClose: () => void;
   onReplaced: (resource: GalleryItem) => void;
+  onTagsChanged: (tags: string[]) => void;
 };
 
-export default function ResourcePreviewModal({ resource, onClose, onReplaced }: Props) {
+export default function ResourcePreviewModal({ resource, onClose, onReplaced, onTagsChanged }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [replacing, setReplacing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -182,6 +184,7 @@ export default function ResourcePreviewModal({ resource, onClose, onReplaced }: 
             <div className="min-w-0">
               <p className="text-lg font-semibold">预览</p>
               <p className="truncate text-sm font-normal text-default-500">{resource.filename}</p>
+              <ResourceTags resourceId={resource.id} tags={resource.tags} isDisabled={replacing} onChanged={onTagsChanged} />
             </div>
             <Button className="shrink-0" size="sm" variant="flat" color="secondary" isLoading={replacing}
               onPress={() => fileInput.current?.click()}>

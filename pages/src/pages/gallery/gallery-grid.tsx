@@ -5,7 +5,7 @@ import type {
   GalleryTagsResponse,
 } from "@/types/api";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Modal,
@@ -52,6 +52,7 @@ export default function GalleryGrid() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<GalleryItem | null>(null);
+  const listRequestId = useRef(0);
 
   const [share, setShare] = useState<GalleryItem | null>(null);
   const [copyingId, setCopyingId] = useState<number | null>(null);
@@ -81,6 +82,10 @@ export default function GalleryGrid() {
         hideToast: true,
       });
       setAvailableTags(res.tags);
+      setTagSelected((current) => {
+        const next = current.filter((tag) => res.tags.includes(tag));
+        return next.length === current.length ? current : next;
+      });
     } catch (err) {
       console.log(err);
       setAvailableTags([]);
@@ -93,6 +98,7 @@ export default function GalleryGrid() {
       selectedTags: string[] = tagSelected,
       selectedPageSize: PageSize = pageSize,
     ) => {
+      const requestId = ++listRequestId.current;
       const nextPage = Math.max(1, targetPage);
       const params = new URLSearchParams({
         page: String(nextPage),
@@ -107,7 +113,9 @@ export default function GalleryGrid() {
       try {
         const res = await api.get<GalleryResponse>(
           `/gallery?${params.toString()}`,
+          { hideToast: true },
         );
+        if (requestId !== listRequestId.current) return;
         const maxPage =
           res.total > 0
             ? Math.max(1, Math.ceil(res.total / selectedPageSize))
@@ -120,13 +128,15 @@ export default function GalleryGrid() {
         setItems(res.data);
         setTotal(res.total);
       } catch (err) {
+        if (requestId !== listRequestId.current) return;
         console.log(err);
-        const message = (err as ApiResponse<unknown>).msg;
+        const message = (err as ApiResponse<unknown> | null)?.msg || "获取资源失败，请稍后重试";
         setError(message);
         setItems([]);
         setTotal(0);
+        addToast({ title: message, color: "danger" });
       } finally {
-        setLoading(false);
+        if (requestId === listRequestId.current) setLoading(false);
       }
     },
     [page, pageSize, tagSelected],
@@ -138,6 +148,7 @@ export default function GalleryGrid() {
 
   useEffect(() => {
     fetchData(page, tagSelected, pageSize);
+    return () => { listRequestId.current += 1; };
   }, [fetchData, page, pageSize, tagSelected]);
 
   const handleTagChange = useCallback((values: string[]) => {
@@ -526,8 +537,14 @@ export default function GalleryGrid() {
           resource={preview}
           onClose={() => setPreview(null)}
           onReplaced={(updated) => {
-            setPreview(updated);
-            setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+            setPreview((current) => current?.id === updated.id ? { ...updated, tags: current.tags } : current);
+            setItems((current) => current.map((item) => item.id === updated.id ? { ...updated, tags: item.tags } : item));
+          }}
+          onTagsChanged={(tags) => {
+            setPreview((current) => current?.id === preview.id ? { ...current, tags } : current);
+            setItems((current) => current.map((item) => item.id === preview.id ? { ...item, tags } : item));
+            void fetchTags();
+            void fetchData(page);
           }}
         />
       )}

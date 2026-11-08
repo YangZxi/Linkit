@@ -11,6 +11,7 @@ import (
 	"linkit/internal/db/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const maxTagRuneLength = 6
@@ -209,6 +210,29 @@ func (r *ResourceDao) ReplaceTags(ctx context.Context, resourceID int64, tags []
 		}
 		return tx.Create(&items).Error
 	})
+}
+
+// ChangeTag changes one association without overwriting other tag edits.
+func (r *ResourceDao) ChangeTag(ctx context.Context, resourceID, userID int64, tag string, remove bool) ([]string, error) {
+	tags := []string{}
+	err := r.store.Client.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var resource model.Resource
+		if err := tx.Select("id").Where("id = ? AND user_id = ?", resourceID, userID).First(&resource).Error; err != nil {
+			return err
+		}
+		if remove {
+			if err := tx.Where("resource_id = ? AND tag = ?", resourceID, tag).Delete(&model.ResourceTag{}).Error; err != nil {
+				return err
+			}
+		} else {
+			item := model.ResourceTag{ResourceID: resourceID, Tag: tag}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&model.ResourceTag{}).Where("resource_id = ?", resourceID).Order("tag ASC").Pluck("tag", &tags).Error
+	})
+	return tags, err
 }
 
 func (r *ResourceDao) GetDashboardStats(ctx context.Context) (int64, int64, int64, error) {
