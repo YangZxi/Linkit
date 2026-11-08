@@ -150,10 +150,13 @@ export default function ResourcePreviewModal({ resource, onClose, onReplaced }: 
                     </Chip>
                   </div>
                   <div className="space-y-1 break-all text-xs text-default-500">
-                    <p>{share.password ? `密码：${share.password}` : "无需密码"}</p>
-                    <p>{share.expireTime ? `到期：${formatShareTime(share.expireTime)}` : "永不过期"}</p>
-                    <p>创建：{formatShareTime(share.createdAt)}</p>
-                    <p>访问 {share.viewCount} 次{share.relay ? " · 已开启加速" : ""}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0">密码: {share.password || "无"}</p>
+                      <p className="shrink-0">访问: {share.viewCount}</p>
+                    </div>
+                    <p>到期: {share.expireTime ? formatShareTime(share.expireTime) : "永不过期"}</p>
+                    <p>创建: {formatShareTime(share.createdAt)}</p>
+                    {share.relay && <p>已开启转发</p>}
                   </div>
                   <div className="flex items-center gap-1">
                     <Button size="sm" variant="flat" className="min-w-0 flex-1"

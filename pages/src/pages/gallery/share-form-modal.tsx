@@ -139,7 +139,7 @@ export default function ShareFormModal({ resource, share, onClose, onSaved }: Pr
                 } />
             )}
             <Switch size="sm" isSelected={relay} isDisabled={disabled} onValueChange={setRelay}>
-              资源加速（S3 使用服务器转发）
+              服务器转发（仅 S3）
             </Switch>
             {error && <Alert color="danger" title={error} />}
             {result && (

@@ -194,8 +194,7 @@ export default function GalleryCard({
           </Button>
           <Button
             color="primary"
-            isLoading={copying}
-            isDisabled={deleting}
+            isDisabled={deleting || copying}
             size="sm"
             variant="flat"
             onClick={(event) => event.stopPropagation()}
