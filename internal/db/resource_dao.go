@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,7 +15,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const maxTagRuneLength = 6
+const maxTagRuneLength = 10
+
+var ErrTagExists = errors.New("标签已存在")
 
 func splitRawTags(value string) []string {
 	if value == "" {
@@ -213,7 +216,7 @@ func (r *ResourceDao) ReplaceTags(ctx context.Context, resourceID int64, tags []
 }
 
 // ChangeTag changes one association without overwriting other tag edits.
-func (r *ResourceDao) ChangeTag(ctx context.Context, resourceID, userID int64, tag string, remove bool) ([]string, error) {
+func (r *ResourceDao) ChangeTag(ctx context.Context, resourceID, userID int64, tag string, remove, create bool) ([]string, error) {
 	tags := []string{}
 	err := r.store.Client.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var resource model.Resource
@@ -225,6 +228,17 @@ func (r *ResourceDao) ChangeTag(ctx context.Context, resourceID, userID int64, t
 				return err
 			}
 		} else {
+			if create {
+				var count int64
+				if err := tx.Model(&model.ResourceTag{}).
+					Joins("JOIN resource ON resource.id = resource_tag.resource_id").
+					Where("resource.user_id = ? AND resource_tag.tag = ?", userID, tag).Count(&count).Error; err != nil {
+					return err
+				}
+				if count > 0 {
+					return ErrTagExists
+				}
+			}
 			item := model.ResourceTag{ResourceID: resourceID, Tag: tag}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item).Error; err != nil {
 				return err

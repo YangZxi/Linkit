@@ -27,19 +27,24 @@ func ResourceTagUpdateHandler(store *db.DB) gin.HandlerFunc {
 		var req struct {
 			Tag    string `json:"tag"`
 			Remove bool   `json:"remove"`
+			Create bool   `json:"create"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, Fail[any]("标签参数无效", 400))
 			return
 		}
 		tags, err := db.ParseTagsFromStrings([]string{req.Tag})
-		if err != nil || len(tags) != 1 {
-			c.JSON(http.StatusBadRequest, Fail[any]("请提供一个不超过 6 个字符的标签", 400))
+		if err != nil || len(tags) != 1 || (req.Create && req.Remove) {
+			c.JSON(http.StatusBadRequest, Fail[any]("请提供一个 1–10 个字符的标签及有效操作", 400))
 			return
 		}
 		ctx, cancel := store.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
-		tags, err = store.Resource.ChangeTag(ctx, resourceID, user.ID, tags[0], req.Remove)
+		tags, err = store.Resource.ChangeTag(ctx, resourceID, user.ID, tags[0], req.Remove, req.Create)
+		if errors.Is(err, db.ErrTagExists) {
+			c.JSON(http.StatusConflict, Fail[any]("标签已存在，请从已有标签中选择", 409))
+			return
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, Fail[any]("资源不存在", 404))
 			return
